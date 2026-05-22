@@ -1,0 +1,27 @@
+import type { Metadata, Viewport } from "next";
+
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "FlexFit AI - Adaptive Fitness Coach",
+  description:
+    "An adaptive AI fitness coach that modifies workouts around your time, energy, soreness, schedule, and equipment."
+};
+
+export const viewport: Viewport = {
+  themeColor: "#05070a",
+  width: "device-width",
+  initialScale: 1
+};
+
+export default function RootLayout({
+  children
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" className="dark">
+      <body>{children}</body>
+    </html>
+  );
+}

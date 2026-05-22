@@ -1,0 +1,67 @@
+import type {
+  BiggestStruggle,
+  BodyFocus,
+  EquipmentAccess,
+  ExperienceLevel,
+  FitnessGoal,
+  GymCrowding,
+  WeakPoint
+} from "@/lib/types";
+
+export const fitnessGoals: { value: FitnessGoal; label: string; copy: string }[] = [
+  { value: "lose-fat", label: "Lose fat", copy: "Lean, efficient sessions" },
+  { value: "build-muscle", label: "Build muscle", copy: "Progressive hypertrophy" },
+  { value: "recomposition", label: "Recomposition", copy: "Strength plus consistency" },
+  { value: "strength", label: "Strength", copy: "Practice heavy patterns" },
+  { value: "general-health", label: "General health", copy: "Move well and feel better" }
+];
+
+export const experienceLevels: { value: ExperienceLevel; label: string }[] = [
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" }
+];
+
+export const equipmentOptions: { value: EquipmentAccess; label: string }[] = [
+  { value: "full-gym", label: "Full gym" },
+  { value: "home-gym", label: "Home gym" },
+  { value: "dumbbells-only", label: "Dumbbells only" },
+  { value: "bodyweight", label: "Bodyweight" }
+];
+
+export const struggles: { value: BiggestStruggle; label: string }[] = [
+  { value: "consistency", label: "Consistency" },
+  { value: "diet", label: "Diet" },
+  { value: "motivation", label: "Motivation" },
+  { value: "time", label: "Time" },
+  { value: "gym-anxiety", label: "Gym anxiety" },
+  { value: "not-knowing-what-to-do", label: "Not knowing what to do" }
+];
+
+export const weakPoints: { value: WeakPoint; label: string }[] = [
+  { value: "chest", label: "Chest" },
+  { value: "shoulders", label: "Shoulders" },
+  { value: "arms", label: "Arms" },
+  { value: "back", label: "Back" },
+  { value: "legs", label: "Legs" },
+  { value: "glutes", label: "Glutes" },
+  { value: "core", label: "Core" },
+  { value: "conditioning", label: "Conditioning" }
+];
+
+export const crowdingOptions: { value: GymCrowding; label: string }[] = [
+  { value: "empty", label: "Empty" },
+  { value: "moderate", label: "Moderate" },
+  { value: "packed", label: "Packed" }
+];
+
+export const bodyFocusOptions: { value: BodyFocus; label: string }[] = [
+  { value: "auto", label: "Auto-fit today" },
+  { value: "full-body", label: "Full body" },
+  { value: "upper", label: "Upper" },
+  { value: "lower", label: "Lower" },
+  { value: "push", label: "Push" },
+  { value: "pull", label: "Pull" },
+  { value: "core", label: "Core" },
+  { value: "conditioning", label: "Conditioning" }
+];
