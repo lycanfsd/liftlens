@@ -14,6 +14,7 @@ const protectedRoutes = [
   "/weak-points",
   "/history",
   "/coach",
+  "/profile",
   "/settings",
   "/onboarding"
 ];

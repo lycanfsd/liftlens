@@ -13,6 +13,12 @@ export type ActionResult = {
   message: string;
 };
 
+export type ProfileActionState = {
+  ok?: boolean;
+  message?: string;
+  error?: string;
+};
+
 const onboardingSchema = z.object({
   primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health"]),
   experience_level: z.enum(["beginner", "intermediate", "advanced"]),
@@ -66,6 +72,12 @@ export async function saveOnboardingAction(formData: FormData) {
       email: user.email,
       primary_goal: answer.primary_goal,
       experience_level: answer.experience_level,
+      training_experience: answer.experience_level,
+      weekly_training_days: answer.weekly_availability,
+      preferred_workout_length: answer.typical_workout_length,
+      equipment_access: answer.equipment_access,
+      biggest_struggle: answer.biggest_struggle,
+      weak_points: answer.weak_points,
       updated_at: new Date().toISOString()
     },
     { onConflict: "user_id" }
@@ -95,7 +107,121 @@ export async function saveOnboardingAction(formData: FormData) {
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/profile");
   redirect("/dashboard");
+}
+
+const profileSchema = z.object({
+  display_name: z.string().trim().max(80, "Display name is too long.").optional(),
+  age: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.number().int().min(13, "Age must be at least 13.").max(100, "Age looks too high.").optional()
+  ),
+  sex: z.string().trim().max(40, "Sex field is too long.").optional(),
+  height: z.string().trim().max(40, "Height is too long.").optional(),
+  weight: z.string().trim().max(40, "Weight is too long.").optional(),
+  training_experience: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health"]).optional(),
+  weekly_training_days: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.number().int().min(1, "Choose at least 1 training day.").max(7, "Training days must be 7 or fewer.").optional()
+  ),
+  preferred_workout_length: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.number().int().min(10, "Workout length must be at least 10 minutes.").max(120, "Workout length must be 120 minutes or less.").optional()
+  ),
+  equipment_access: z.enum(["full-gym", "home-gym", "dumbbells-only", "bodyweight"]).optional(),
+  weak_points: z.array(z.string()).default([]),
+  biggest_struggle: z
+    .enum(["consistency", "diet", "motivation", "time", "gym-anxiety", "not-knowing-what-to-do"])
+    .optional(),
+  injury_notes: z.string().trim().max(800, "Notes must stay under 800 characters.").optional()
+});
+
+function optionalText(value: string | undefined) {
+  return value && value.length > 0 ? value : null;
+}
+
+export async function updateProfileAction(
+  _previous: ProfileActionState,
+  formData: FormData
+): Promise<ProfileActionState> {
+  const parsed = profileSchema.safeParse({
+    display_name: formData.get("display_name"),
+    age: formData.get("age"),
+    sex: formData.get("sex"),
+    height: formData.get("height"),
+    weight: formData.get("weight"),
+    training_experience: formData.get("training_experience") || undefined,
+    primary_goal: formData.get("primary_goal") || undefined,
+    weekly_training_days: formData.get("weekly_training_days"),
+    preferred_workout_length: formData.get("preferred_workout_length"),
+    equipment_access: formData.get("equipment_access") || undefined,
+    weak_points: formData.getAll("weak_points").map(String),
+    biggest_struggle: formData.get("biggest_struggle") || undefined,
+    injury_notes: formData.get("injury_notes")
+  });
+
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.errors[0]?.message ?? "Check your profile details and try again."
+    };
+  }
+
+  if (!isSupabaseConfigured) {
+    return {
+      ok: true,
+      message: "Profile saved in demo mode. Connect Supabase to persist profile edits."
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, error: "Log in again before saving your profile." };
+  }
+
+  const profile = parsed.data;
+  const { error } = await supabase.from("profiles").upsert(
+    {
+      user_id: user.id,
+      email: user.email,
+      display_name: optionalText(profile.display_name),
+      age: profile.age ?? null,
+      sex: optionalText(profile.sex),
+      height: optionalText(profile.height),
+      weight: optionalText(profile.weight),
+      training_experience: profile.training_experience ?? null,
+      experience_level: profile.training_experience ?? null,
+      primary_goal: profile.primary_goal ?? null,
+      weekly_training_days: profile.weekly_training_days ?? null,
+      preferred_workout_length: profile.preferred_workout_length ?? null,
+      equipment_access: profile.equipment_access ?? null,
+      weak_points: profile.weak_points,
+      biggest_struggle: profile.biggest_struggle ?? null,
+      injury_notes: optionalText(profile.injury_notes),
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) {
+    return {
+      ok: false,
+      error: `We could not save that yet: ${error.message}`
+    };
+  }
+
+  revalidatePath("/profile");
+  revalidatePath("/dashboard");
+  return {
+    ok: true,
+    message: "Profile updated. Future workouts have better context now."
+  };
 }
 
 const workoutSchema = z.object({

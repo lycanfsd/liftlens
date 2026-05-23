@@ -1,4 +1,5 @@
-import { CheckCircle2, CreditCard, Database, KeyRound } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, CreditCard, Database, KeyRound, UserRound } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
 import { PageHeader } from "@/components/page-header";
@@ -60,15 +61,24 @@ export default function SettingsPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card>
           <CardContent className="p-5">
-            <h2 className="text-xl font-semibold text-white">Account</h2>
+            <div className="flex items-center gap-2 text-primary">
+              <UserRound className="h-5 w-5" />
+              <span className="text-sm font-semibold">Account</span>
+            </div>
+            <h2 className="mt-4 text-xl font-semibold text-white">Profile and session</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Log out of this device. Supabase handles sessions when configured.
+              Update your fitness profile or log out of this device. Supabase handles sessions when configured.
             </p>
-            <form action={logoutAction} className="mt-5">
-              <Button type="submit" variant="outline">
-                Log out
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              <Button asChild>
+                <Link href="/profile">Open profile</Link>
               </Button>
-            </form>
+              <form action={logoutAction}>
+                <Button type="submit" variant="outline" className="w-full sm:w-auto">
+                Log out
+                </Button>
+              </form>
+            </div>
           </CardContent>
         </Card>
         <Card>

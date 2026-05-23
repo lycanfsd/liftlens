@@ -10,6 +10,7 @@ import {
   LifeBuoy,
   LogOut,
   MessageCircle,
+  UserRound,
   RotateCcw,
   Settings,
   Target
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/weak-points", label: "Weak points", icon: Target },
   { href: "/history", label: "History", icon: History },
   { href: "/coach", label: "Coach", icon: MessageCircle },
+  { href: "/profile", label: "Profile", icon: UserRound },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 

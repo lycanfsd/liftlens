@@ -14,7 +14,16 @@ create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
   email text,
+  display_name text,
   full_name text,
+  age integer,
+  sex text,
+  height text,
+  weight text,
+  training_experience text check (
+    training_experience is null
+    or training_experience in ('beginner', 'intermediate', 'advanced')
+  ),
   primary_goal text check (
     primary_goal is null
     or primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health')
@@ -23,6 +32,32 @@ create table if not exists public.profiles (
     experience_level is null
     or experience_level in ('beginner', 'intermediate', 'advanced')
   ),
+  weekly_training_days integer check (
+    weekly_training_days is null
+    or weekly_training_days between 1 and 7
+  ),
+  preferred_workout_length integer check (
+    preferred_workout_length is null
+    or preferred_workout_length between 10 and 120
+  ),
+  equipment_access text check (
+    equipment_access is null
+    or equipment_access in ('full-gym', 'home-gym', 'dumbbells-only', 'bodyweight')
+  ),
+  weak_points text[] not null default '{}',
+  biggest_struggle text check (
+    biggest_struggle is null
+    or biggest_struggle in (
+      'consistency',
+      'diet',
+      'motivation',
+      'time',
+      'gym-anxiety',
+      'not-knowing-what-to-do'
+    )
+  ),
+  injury_notes text,
+  plan_type text not null default 'free',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -159,10 +194,49 @@ alter table public.profiles
 add column if not exists full_name text;
 
 alter table public.profiles
+add column if not exists display_name text;
+
+alter table public.profiles
+add column if not exists age integer;
+
+alter table public.profiles
+add column if not exists sex text;
+
+alter table public.profiles
+add column if not exists height text;
+
+alter table public.profiles
+add column if not exists weight text;
+
+alter table public.profiles
+add column if not exists training_experience text;
+
+alter table public.profiles
 add column if not exists primary_goal text;
 
 alter table public.profiles
 add column if not exists experience_level text;
+
+alter table public.profiles
+add column if not exists weekly_training_days integer;
+
+alter table public.profiles
+add column if not exists preferred_workout_length integer;
+
+alter table public.profiles
+add column if not exists equipment_access text;
+
+alter table public.profiles
+add column if not exists weak_points text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists biggest_struggle text;
+
+alter table public.profiles
+add column if not exists injury_notes text;
+
+alter table public.profiles
+add column if not exists plan_type text not null default 'free';
 
 alter table public.profiles
 add column if not exists created_at timestamptz not null default now();
@@ -196,6 +270,16 @@ alter column user_id set not null;
 
 alter table public.workout_exercises
 add column if not exists updated_at timestamptz not null default now();
+
+update public.profiles
+set display_name = coalesce(display_name, full_name)
+where display_name is null
+  and full_name is not null;
+
+update public.profiles
+set training_experience = coalesce(training_experience, experience_level)
+where training_experience is null
+  and experience_level is not null;
 
 create unique index if not exists profiles_user_id_unique_idx
 on public.profiles (user_id);
@@ -264,6 +348,7 @@ begin
   insert into public.profiles (
     user_id,
     email,
+    display_name,
     full_name
   )
   values (
@@ -272,11 +357,16 @@ begin
     coalesce(
       new.raw_user_meta_data ->> 'full_name',
       new.raw_user_meta_data ->> 'name'
+    ),
+    coalesce(
+      new.raw_user_meta_data ->> 'full_name',
+      new.raw_user_meta_data ->> 'name'
     )
   )
   on conflict (user_id) do update
   set
     email = excluded.email,
+    display_name = coalesce(public.profiles.display_name, excluded.display_name),
     full_name = coalesce(public.profiles.full_name, excluded.full_name),
     updated_at = now();
 

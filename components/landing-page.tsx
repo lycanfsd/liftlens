@@ -76,26 +76,47 @@ const faqs = [
   }
 ];
 
-export function LandingPage() {
+export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boolean }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/45 backdrop-blur">
-        <div className="container flex h-16 items-center justify-between">
-          <Logo />
+        <div className="container flex h-16 items-center justify-between gap-3">
+          <Logo className="[&>span:last-child>span:last-child]:hidden sm:[&>span:last-child>span:last-child]:block" />
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <a href="#features" className="hover:text-white">
+            <a href="#features" className="transition hover:text-white">
               Features
             </a>
-            <a href="#pricing" className="hover:text-white">
+            <a href="#pricing" className="transition hover:text-white">
               Pricing
             </a>
-            <a href="#faq" className="hover:text-white">
+            <a href="#faq" className="transition hover:text-white">
               FAQ
             </a>
           </nav>
-          <Button asChild size="sm">
-            <Link href="/signup">Start Free</Link>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {isAuthenticated ? (
+              <Button asChild size="sm" className="shadow-green transition hover:-translate-y-0.5">
+                <Link href="/dashboard">
+                  <span className="sm:hidden">App</span>
+                  <span className="hidden sm:inline">Dashboard</span>
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  asChild
+                  size="sm"
+                  variant="ghost"
+                  className="border border-white/10 bg-white/[0.04] text-white transition hover:-translate-y-0.5 hover:bg-white/10 hover:text-white"
+                >
+                  <Link href="/login">Log in</Link>
+                </Button>
+                <Button asChild size="sm" className="shadow-green transition hover:-translate-y-0.5">
+                  <Link href="/signup">Start Free</Link>
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
