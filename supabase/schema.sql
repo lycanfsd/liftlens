@@ -1,10 +1,28 @@
 create extension if not exists pgcrypto;
 
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
 create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
   email text,
-  primary_goal text,
-  experience_level text,
+  full_name text,
+  primary_goal text check (
+    primary_goal is null
+    or primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health')
+  ),
+  experience_level text check (
+    experience_level is null
+    or experience_level in ('beginner', 'intermediate', 'advanced')
+  ),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -12,12 +30,31 @@ create table if not exists public.profiles (
 create table if not exists public.onboarding_answers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
-  primary_goal text not null check (primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health')),
-  experience_level text not null check (experience_level in ('beginner', 'intermediate', 'advanced')),
-  weekly_availability integer not null check (weekly_availability between 1 and 7),
-  typical_workout_length integer not null check (typical_workout_length between 10 and 120),
-  equipment_access text not null check (equipment_access in ('full-gym', 'home-gym', 'dumbbells-only', 'bodyweight')),
-  biggest_struggle text not null check (biggest_struggle in ('consistency', 'diet', 'motivation', 'time', 'gym-anxiety', 'not-knowing-what-to-do')),
+  primary_goal text not null check (
+    primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health')
+  ),
+  experience_level text not null check (
+    experience_level in ('beginner', 'intermediate', 'advanced')
+  ),
+  weekly_availability integer not null check (
+    weekly_availability between 1 and 7
+  ),
+  typical_workout_length integer not null check (
+    typical_workout_length between 10 and 120
+  ),
+  equipment_access text not null check (
+    equipment_access in ('full-gym', 'home-gym', 'dumbbells-only', 'bodyweight')
+  ),
+  biggest_struggle text not null check (
+    biggest_struggle in (
+      'consistency',
+      'diet',
+      'motivation',
+      'time',
+      'gym-anxiety',
+      'not-knowing-what-to-do'
+    )
+  ),
   weak_points text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -27,35 +64,33 @@ create table if not exists public.workouts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   workout_name text not null,
-  duration integer not null check (duration between 1 and 180),
+  duration integer not null check (
+    duration between 1 and 180
+  ),
   focus text not null,
-  intensity text not null check (intensity in ('restore', 'steady', 'push')),
-  energy integer not null check (energy between 1 and 5),
-  soreness integer not null check (soreness between 1 and 5),
-  time_available integer not null check (time_available between 1 and 180),
+  intensity text not null check (
+    intensity in ('restore', 'steady', 'push')
+  ),
+  energy integer not null check (
+    energy between 1 and 5
+  ),
+  soreness integer not null check (
+    soreness between 1 and 5
+  ),
+  time_available integer not null check (
+    time_available between 1 and 180
+  ),
   equipment text not null,
-  gym_crowding text not null check (gym_crowding in ('empty', 'moderate', 'packed')),
+  gym_crowding text not null check (
+    gym_crowding in ('empty', 'moderate', 'packed')
+  ),
   body_focus text not null,
   warmup text[] not null default '{}',
   why_it_fits text[] not null default '{}',
   condensed_version text[] not null default '{}',
   completed_exercises integer not null default 0,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.workout_exercises (
-  id uuid primary key default gen_random_uuid(),
-  workout_id uuid not null references public.workouts(id) on delete cascade,
-  exercise_order integer not null,
-  name text not null,
-  muscle_group text not null,
-  equipment text not null,
-  sets integer not null,
-  reps text not null,
-  rest text not null,
-  cue text,
-  substitution text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.workout_logs (
@@ -63,89 +98,397 @@ create table if not exists public.workout_logs (
   user_id uuid not null references auth.users(id) on delete cascade,
   workout_id uuid references public.workouts(id) on delete set null,
   completed_at timestamptz not null default now(),
-  duration integer not null,
+  duration integer not null check (
+    duration between 1 and 180
+  ),
   focus text not null,
-  energy integer not null check (energy between 1 and 5),
-  soreness integer not null check (soreness between 1 and 5)
+  energy integer not null check (
+    energy between 1 and 5
+  ),
+  soreness integer not null check (
+    soreness between 1 and 5
+  ),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
-create index if not exists profiles_email_idx on public.profiles(email);
-create index if not exists workouts_user_created_idx on public.workouts(user_id, created_at desc);
-create index if not exists workout_logs_user_completed_idx on public.workout_logs(user_id, completed_at desc);
-create index if not exists workout_exercises_workout_order_idx on public.workout_exercises(workout_id, exercise_order);
+create table if not exists public.workout_exercises (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workout_id uuid not null references public.workouts(id) on delete cascade,
+  exercise_order integer not null,
+  name text not null,
+  muscle_group text not null,
+  equipment text not null,
+  sets integer not null check (
+    sets > 0
+  ),
+  reps text not null,
+  rest text not null,
+  cue text,
+  substitution text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-create or replace function public.set_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
+alter table public.profiles
+drop constraint if exists profiles_id_matches_user_id;
+
+alter table public.profiles
+drop constraint if exists profiles_id_fkey;
+
+alter table public.profiles
+alter column id set default gen_random_uuid();
+
+alter table public.profiles
+add column if not exists user_id uuid references auth.users(id) on delete cascade;
+
+update public.profiles
+set user_id = id
+where user_id is null
+  and exists (
+    select 1
+    from auth.users
+    where auth.users.id = public.profiles.id
+  );
+
+alter table public.profiles
+alter column user_id set not null;
+
+alter table public.profiles
+add column if not exists full_name text;
+
+alter table public.profiles
+add column if not exists primary_goal text;
+
+alter table public.profiles
+add column if not exists experience_level text;
+
+alter table public.profiles
+add column if not exists created_at timestamptz not null default now();
+
+alter table public.profiles
+add column if not exists updated_at timestamptz not null default now();
+
+alter table public.onboarding_answers
+add column if not exists updated_at timestamptz not null default now();
+
+alter table public.workouts
+add column if not exists updated_at timestamptz not null default now();
+
+alter table public.workout_logs
+add column if not exists created_at timestamptz not null default now();
+
+alter table public.workout_logs
+add column if not exists updated_at timestamptz not null default now();
+
+alter table public.workout_exercises
+add column if not exists user_id uuid references auth.users(id) on delete cascade;
+
+update public.workout_exercises
+set user_id = public.workouts.user_id
+from public.workouts
+where public.workout_exercises.workout_id = public.workouts.id
+  and public.workout_exercises.user_id is null;
+
+alter table public.workout_exercises
+alter column user_id set not null;
+
+alter table public.workout_exercises
+add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists profiles_user_id_unique_idx
+on public.profiles (user_id);
+
+create unique index if not exists onboarding_answers_user_id_unique_idx
+on public.onboarding_answers (user_id);
+
+create index if not exists profiles_user_id_idx
+on public.profiles (user_id);
+
+create index if not exists profiles_email_idx
+on public.profiles (email);
+
+create index if not exists onboarding_answers_user_id_idx
+on public.onboarding_answers (user_id);
+
+create index if not exists workouts_user_created_idx
+on public.workouts (user_id, created_at desc);
+
+create index if not exists workout_logs_user_completed_idx
+on public.workout_logs (user_id, completed_at desc);
+
+create index if not exists workout_exercises_user_id_idx
+on public.workout_exercises (user_id);
+
+create index if not exists workout_exercises_workout_order_idx
+on public.workout_exercises (workout_id, exercise_order);
 
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
 before update on public.profiles
-for each row execute function public.set_updated_at();
+for each row
+execute function public.set_updated_at();
 
 drop trigger if exists onboarding_answers_set_updated_at on public.onboarding_answers;
 create trigger onboarding_answers_set_updated_at
 before update on public.onboarding_answers
-for each row execute function public.set_updated_at();
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists workouts_set_updated_at on public.workouts;
+create trigger workouts_set_updated_at
+before update on public.workouts
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists workout_logs_set_updated_at on public.workout_logs;
+create trigger workout_logs_set_updated_at
+before update on public.workout_logs
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists workout_exercises_set_updated_at on public.workout_exercises;
+create trigger workout_exercises_set_updated_at
+before update on public.workout_exercises
+for each row
+execute function public.set_updated_at();
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (
+    user_id,
+    email,
+    full_name
+  )
+  values (
+    new.id,
+    new.email,
+    coalesce(
+      new.raw_user_meta_data ->> 'full_name',
+      new.raw_user_meta_data ->> 'name'
+    )
+  )
+  on conflict (user_id) do update
+  set
+    email = excluded.email,
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
+    updated_at = now();
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row
+execute function public.handle_new_user();
+
+insert into public.profiles (
+  user_id,
+  email
+)
+select
+  auth.users.id,
+  auth.users.email
+from auth.users
+on conflict (user_id) do nothing;
 
 alter table public.profiles enable row level security;
 alter table public.onboarding_answers enable row level security;
 alter table public.workouts enable row level security;
-alter table public.workout_exercises enable row level security;
 alter table public.workout_logs enable row level security;
+alter table public.workout_exercises enable row level security;
 
-drop policy if exists "Users can read own profile" on public.profiles;
-create policy "Users can read own profile"
-on public.profiles for select
-using (auth.uid() = id);
-
-drop policy if exists "Users can upsert own profile" on public.profiles;
-create policy "Users can upsert own profile"
-on public.profiles for insert
-with check (auth.uid() = id);
-
-drop policy if exists "Users can update own profile" on public.profiles;
-create policy "Users can update own profile"
-on public.profiles for update
-using (auth.uid() = id)
-with check (auth.uid() = id);
-
-drop policy if exists "Users can manage own onboarding" on public.onboarding_answers;
-create policy "Users can manage own onboarding"
-on public.onboarding_answers for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "Users can manage own workouts" on public.workouts;
-create policy "Users can manage own workouts"
-on public.workouts for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
-drop policy if exists "Users can manage exercises for own workouts" on public.workout_exercises;
-create policy "Users can manage exercises for own workouts"
-on public.workout_exercises for all
+drop policy if exists profiles_select_own on public.profiles;
+create policy profiles_select_own
+on public.profiles
+for select
 using (
-  exists (
-    select 1 from public.workouts
-    where workouts.id = workout_exercises.workout_id
-      and workouts.user_id = auth.uid()
-  )
+  auth.uid() = user_id
+);
+
+drop policy if exists profiles_insert_own on public.profiles;
+create policy profiles_insert_own
+on public.profiles
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists profiles_update_own on public.profiles;
+create policy profiles_update_own
+on public.profiles
+for update
+using (
+  auth.uid() = user_id
 )
 with check (
-  exists (
-    select 1 from public.workouts
-    where workouts.id = workout_exercises.workout_id
-      and workouts.user_id = auth.uid()
+  auth.uid() = user_id
+);
+
+drop policy if exists profiles_delete_own on public.profiles;
+create policy profiles_delete_own
+on public.profiles
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists onboarding_answers_select_own on public.onboarding_answers;
+create policy onboarding_answers_select_own
+on public.onboarding_answers
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists onboarding_answers_insert_own on public.onboarding_answers;
+create policy onboarding_answers_insert_own
+on public.onboarding_answers
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists onboarding_answers_update_own on public.onboarding_answers;
+create policy onboarding_answers_update_own
+on public.onboarding_answers
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists onboarding_answers_delete_own on public.onboarding_answers;
+create policy onboarding_answers_delete_own
+on public.onboarding_answers
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists workouts_select_own on public.workouts;
+create policy workouts_select_own
+on public.workouts
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists workouts_insert_own on public.workouts;
+create policy workouts_insert_own
+on public.workouts
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists workouts_update_own on public.workouts;
+create policy workouts_update_own
+on public.workouts
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists workouts_delete_own on public.workouts;
+create policy workouts_delete_own
+on public.workouts
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists workout_logs_select_own on public.workout_logs;
+create policy workout_logs_select_own
+on public.workout_logs
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists workout_logs_insert_own on public.workout_logs;
+create policy workout_logs_insert_own
+on public.workout_logs
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists workout_logs_update_own on public.workout_logs;
+create policy workout_logs_update_own
+on public.workout_logs
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists workout_logs_delete_own on public.workout_logs;
+create policy workout_logs_delete_own
+on public.workout_logs
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists workout_exercises_select_own on public.workout_exercises;
+create policy workout_exercises_select_own
+on public.workout_exercises
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists workout_exercises_insert_own on public.workout_exercises;
+create policy workout_exercises_insert_own
+on public.workout_exercises
+for insert
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.workouts
+    where public.workouts.id = workout_id
+      and public.workouts.user_id = auth.uid()
   )
 );
 
-drop policy if exists "Users can manage own workout logs" on public.workout_logs;
-create policy "Users can manage own workout logs"
-on public.workout_logs for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+drop policy if exists workout_exercises_update_own on public.workout_exercises;
+create policy workout_exercises_update_own
+on public.workout_exercises
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+  and exists (
+    select 1
+    from public.workouts
+    where public.workouts.id = workout_id
+      and public.workouts.user_id = auth.uid()
+  )
+);
+
+drop policy if exists workout_exercises_delete_own on public.workout_exercises;
+create policy workout_exercises_delete_own
+on public.workout_exercises
+for delete
+using (
+  auth.uid() = user_id
+);

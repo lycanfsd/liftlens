@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
-import { ArrowRight, Mail, LockKeyhole } from "lucide-react";
+import { useActionState, useEffect, useState } from "react";
+import { ArrowRight, CheckCircle2, LockKeyhole, Mail, RefreshCcw } from "lucide-react";
 
-import type { AuthState } from "@/app/auth/actions";
+import { resendConfirmationAction, type AuthState } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,68 @@ export function AuthForm({
   nextPath?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
+  const [resendState, resendFormAction, resendPending] = useActionState(resendConfirmationAction, {});
+  const [redirectOrigin, setRedirectOrigin] = useState("");
   const isLogin = mode === "login";
+  const confirmationEmail = resendState.email ?? state.email;
+  const needsConfirmation =
+    !isLogin &&
+    Boolean(confirmationEmail) &&
+    (state.status === "confirmation_required" || resendState.status === "confirmation_resent");
+
+  useEffect(() => {
+    setRedirectOrigin(window.location.origin);
+  }, []);
+
+  if (needsConfirmation && confirmationEmail) {
+    return (
+      <Card className="w-full max-w-md border-primary/30 bg-black/55 shadow-green">
+        <CardHeader className="text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/15 text-primary">
+            <CheckCircle2 className="h-7 w-7" />
+          </span>
+          <CardTitle className="text-2xl">Check your email</CardTitle>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Check your email to confirm your account. We sent a confirmation link to{" "}
+            <span className="font-semibold text-white">{confirmationEmail}</span>. After confirming,
+            return here and log in.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {resendState.message ? (
+            <div className="rounded-2xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">
+              {resendState.message}
+            </div>
+          ) : null}
+          {resendState.error ? (
+            <div className="rounded-2xl border border-destructive/25 bg-destructive/10 p-3 text-sm text-red-200">
+              {resendState.error}
+            </div>
+          ) : null}
+          <Button asChild className="w-full">
+            <a href="mailto:">
+              <Mail className="h-4 w-4" />
+              Open email app
+            </a>
+          </Button>
+          <Button asChild variant="outline" className="w-full">
+            <Link href="/login">
+              Go to login
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+          <form action={resendFormAction}>
+            <input type="hidden" name="email" value={confirmationEmail} />
+            <input type="hidden" name="redirect_origin" value={redirectOrigin} />
+            <Button type="submit" variant="ghost" className="w-full" disabled={resendPending}>
+              <RefreshCcw className="h-4 w-4" />
+              {resendPending ? "Sending..." : "Resend confirmation email"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-md border-white/12 bg-black/55">
@@ -37,6 +98,7 @@ export function AuthForm({
       <CardContent>
         <form action={formAction} className="space-y-4">
           <input type="hidden" name="next" value={nextPath ?? "/dashboard"} />
+          {!isLogin ? <input type="hidden" name="redirect_origin" value={redirectOrigin} /> : null}
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <div className="relative">

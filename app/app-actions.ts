@@ -60,29 +60,35 @@ export async function saveOnboardingAction(formData: FormData) {
 
   const answer = parsed.data;
 
-  const { error: profileError } = await supabase.from("profiles").upsert({
-    id: user.id,
-    email: user.email,
-    primary_goal: answer.primary_goal,
-    experience_level: answer.experience_level,
-    updated_at: new Date().toISOString()
-  });
+  const { error: profileError } = await supabase.from("profiles").upsert(
+    {
+      user_id: user.id,
+      email: user.email,
+      primary_goal: answer.primary_goal,
+      experience_level: answer.experience_level,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
 
   if (profileError) {
     redirect(`/onboarding?error=${encodeURIComponent(profileError.message)}`);
   }
 
-  const { error } = await supabase.from("onboarding_answers").upsert({
-    user_id: user.id,
-    primary_goal: answer.primary_goal,
-    experience_level: answer.experience_level,
-    weekly_availability: answer.weekly_availability,
-    typical_workout_length: answer.typical_workout_length,
-    equipment_access: answer.equipment_access,
-    biggest_struggle: answer.biggest_struggle,
-    weak_points: answer.weak_points,
-    updated_at: new Date().toISOString()
-  });
+  const { error } = await supabase.from("onboarding_answers").upsert(
+    {
+      user_id: user.id,
+      primary_goal: answer.primary_goal,
+      experience_level: answer.experience_level,
+      weekly_availability: answer.weekly_availability,
+      typical_workout_length: answer.typical_workout_length,
+      equipment_access: answer.equipment_access,
+      biggest_struggle: answer.biggest_struggle,
+      weak_points: answer.weak_points,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
 
   if (error) {
     redirect(`/onboarding?error=${encodeURIComponent(error.message)}`);
@@ -176,6 +182,7 @@ export async function saveWorkoutAction(
 
   const { error: exerciseError } = await supabase.from("workout_exercises").insert(
     parsed.data.workout.exercises.map((exercise, index) => ({
+      user_id: user.id,
       workout_id: savedWorkout.id,
       exercise_order: index + 1,
       name: exercise.name,
