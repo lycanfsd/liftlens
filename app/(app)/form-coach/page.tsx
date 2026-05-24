@@ -5,9 +5,10 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { formCoachExercises } from "@/lib/form-coach";
-import { isPaidPlan, normalizePlanType, type PlanType } from "@/lib/plans";
+import type { PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getUserSubscriptionAccess } from "@/lib/subscription";
 import { toTitleCase } from "@/lib/utils";
 
 function asStringArray(value: unknown) {
@@ -16,6 +17,7 @@ function asStringArray(value: unknown) {
 
 type FormCoachPageData = {
   planType: PlanType;
+  hasPremiumAccess: boolean;
   history: FormCheckHistoryItem[];
 };
 
@@ -92,6 +94,7 @@ async function getFormCoachPageData(): Promise<FormCoachPageData> {
   if (!isSupabaseConfigured) {
     return {
       planType: "Free",
+      hasPremiumAccess: false,
       history: []
     };
   }
@@ -104,21 +107,17 @@ async function getFormCoachPageData(): Promise<FormCoachPageData> {
   if (!user) {
     return {
       planType: "Free",
+      hasPremiumAccess: false,
       history: []
     };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("plan_type")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const subscriptionAccess = await getUserSubscriptionAccess(supabase, user.id);
 
-  const planType = normalizePlanType((profile as { plan_type?: unknown } | null)?.plan_type);
-
-  if (!isPaidPlan(planType)) {
+  if (!subscriptionAccess.hasPremiumAccess) {
     return {
-      planType,
+      planType: subscriptionAccess.effectivePlanType,
+      hasPremiumAccess: false,
       history: []
     };
   }
@@ -142,7 +141,8 @@ async function getFormCoachPageData(): Promise<FormCoachPageData> {
       | null) ?? [];
 
   return {
-    planType,
+    planType: subscriptionAccess.effectivePlanType,
+    hasPremiumAccess: true,
     history: rows.map((row) => {
       const corrections = asStringArray(row.corrections);
 
@@ -158,8 +158,7 @@ async function getFormCoachPageData(): Promise<FormCoachPageData> {
 }
 
 export default async function FormCoachPage() {
-  const { history, planType } = await getFormCoachPageData();
-  const hasFormCoachAccess = isPaidPlan(planType);
+  const { history, hasPremiumAccess: hasFormCoachAccess } = await getFormCoachPageData();
 
   return (
     <>

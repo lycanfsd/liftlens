@@ -2,6 +2,7 @@ import { Logo } from "@/components/logo";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { NavBar } from "@/components/nav-bar";
 import { ProfileMenu } from "@/components/profile-menu";
+import { Badge } from "@/components/ui/badge";
 import type { AppUserIdentity } from "@/lib/types";
 
 export function AppShell({
@@ -23,7 +24,14 @@ export function AppShell({
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">FlexFit AI</p>
                 <p className="mt-1 text-sm text-muted-foreground">Today&apos;s plan fits today&apos;s life.</p>
               </div>
-              <ProfileMenu identity={userIdentity} />
+              <div className="flex items-center gap-2">
+                {userIdentity.devPremiumEnabled ? (
+                  <Badge className="border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-accent">
+                    Dev Premium Enabled
+                  </Badge>
+                ) : null}
+                <ProfileMenu identity={userIdentity} />
+              </div>
             </div>
           </header>
           <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-10 lg:pt-8">

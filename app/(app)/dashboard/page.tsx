@@ -1,5 +1,6 @@
 import { Activity, CalendarCheck2, ChevronRight, Flame, Gauge, Lock, Sparkles, Trophy, Video } from "lucide-react";
 
+import { DailyCoachMessage } from "@/components/daily-coach-message";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { ProgressRing } from "@/components/progress-ring";
@@ -8,9 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { demoStats } from "@/lib/demo-data";
-import { isPaidPlan, normalizePlanType, type PlanType } from "@/lib/plans";
+import { normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getEffectivePlanType, hasPremiumAccess } from "@/lib/subscription";
 import type { DashboardStat } from "@/lib/types";
 
 type DashboardData = {
@@ -22,6 +24,7 @@ type DashboardData = {
   readinessTitle: string;
   nextBestAction: string;
   planType: PlanType;
+  hasPremiumAccess: boolean;
 };
 
 function calculateStreak(days: string[]) {
@@ -49,7 +52,8 @@ async function getDashboardData(): Promise<DashboardData> {
       readinessScore: 82,
       readinessTitle: "Green light, but keep the session efficient",
       nextBestAction: "Generate a 35-minute full-body session with one packed-gym fallback ready.",
-      planType: "Free"
+      planType: "Free",
+      hasPremiumAccess: false
     };
   }
 
@@ -67,7 +71,8 @@ async function getDashboardData(): Promise<DashboardData> {
       readinessScore: 58,
       readinessTitle: "Start with a small, clean win",
       nextBestAction: "Save your first adaptive workout so FlexFit can learn your rhythm.",
-      planType: "Free"
+      planType: "Free",
+      hasPremiumAccess: false
     };
   }
 
@@ -83,6 +88,7 @@ async function getDashboardData(): Promise<DashboardData> {
 
   const rows = (logs ?? []) as { completed_at: string; focus: string | null; energy: number | null }[];
   const planType = normalizePlanType((profile as { plan_type?: unknown } | null)?.plan_type);
+  const premiumAccess = hasPremiumAccess(planType);
   const days = rows.map((row) => row.completed_at.slice(0, 10));
   const now = Date.now();
   const weekRows = rows.filter((row) => now - new Date(row.completed_at).getTime() <= 7 * 86400000);
@@ -139,14 +145,15 @@ async function getDashboardData(): Promise<DashboardData> {
       rows.length > 0
         ? "Generate today's workout and let energy, soreness, and crowding set the volume."
         : "Run a 20-30 minute starter workout and save it as completed.",
-    planType
+    planType: getEffectivePlanType(planType),
+    hasPremiumAccess: premiumAccess
   };
 }
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
   const icons = [Flame, Trophy, CalendarCheck2, Activity];
-  const hasFormCoachAccess = isPaidPlan(data.planType);
+  const hasFormCoachAccess = data.hasPremiumAccess;
 
   return (
     <>
@@ -159,6 +166,8 @@ export default async function DashboardPage() {
           <a href="/workout">Generate workout</a>
         </Button>
       </PageHeader>
+
+      <DailyCoachMessage />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="overflow-hidden border-primary/25 bg-gradient-to-br from-primary/14 via-white/[0.055] to-accent/10">

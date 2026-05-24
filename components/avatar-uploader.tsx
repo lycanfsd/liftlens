@@ -60,7 +60,9 @@ export function AvatarUploader({
     email,
     displayName,
     avatarUrl,
-    planType: "Free"
+    planType: "Free",
+    hasPremiumAccess: false,
+    devPremiumEnabled: false
   });
 
   function openFilePicker() {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Activity, BatteryMedium, Clock3, MapPin, RotateCcw, WandSparkles } from "lucide-react";
+import { Activity, BatteryMedium, Bed, Clock3, MapPin, RotateCcw, ShieldAlert, WandSparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { saveWorkoutAction } from "@/app/app-actions";
@@ -10,18 +10,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { bodyFocusOptions, crowdingOptions, equipmentOptions } from "@/lib/constants";
-import type { BodyFocus, DailyCheckIn, EquipmentAccess, GeneratedWorkout, GymCrowding } from "@/lib/types";
-import { generateWorkout } from "@/lib/workout/generator";
+import { bodyFocusOptions, crowdingOptions, discomfortOptions, equipmentOptions, missedWorkoutOptions } from "@/lib/constants";
+import type {
+  BodyFocus,
+  DailyCheckIn,
+  DiscomfortArea,
+  EquipmentAccess,
+  GeneratedWorkout,
+  GymCrowding,
+  MissedWorkoutWindow
+} from "@/lib/types";
+import { generateWorkout, type WorkoutEngineContext } from "@/lib/workout/generator";
 import { cn } from "@/lib/utils";
 
 const defaultInput: DailyCheckIn = {
   timeAvailable: 35,
   energy: 3,
   soreness: 2,
+  sleepQuality: 3,
   equipment: "full-gym",
   crowding: "moderate",
-  bodyFocus: "auto"
+  bodyFocus: "auto",
+  missedWorkouts: "none",
+  discomfortArea: "none"
 };
 
 const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
@@ -33,7 +44,7 @@ const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
   {
     label: "Low battery",
     copy: "Keep the streak alive",
-    input: { ...defaultInput, timeAvailable: 25, energy: 2, soreness: 3, bodyFocus: "upper" }
+    input: { ...defaultInput, timeAvailable: 25, energy: 2, soreness: 3, sleepQuality: 2, bodyFocus: "upper" }
   },
   {
     label: "Packed gym",
@@ -44,6 +55,11 @@ const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
     label: "Ready to push",
     copy: "More output, still controlled",
     input: { ...defaultInput, timeAvailable: 50, energy: 5, soreness: 1, bodyFocus: "full-body" }
+  },
+  {
+    label: "Missed week",
+    copy: "No guilt re-entry dose",
+    input: { ...defaultInput, timeAvailable: 30, energy: 3, soreness: 2, missedWorkouts: "1-week-plus" }
   }
 ];
 
@@ -110,26 +126,40 @@ function SignalSlider({
   );
 }
 
-export function WorkoutGenerator() {
+function getTradeoffCopy(input: DailyCheckIn) {
+  if (input.crowding === "packed") {
+    return "This version avoids machine bottlenecks and keeps substitutions close.";
+  }
+  if (input.missedWorkouts !== "none") {
+    return "This version uses re-entry logic: no punishment volume, just a dose you can recover from.";
+  }
+  if (input.discomfortArea !== "none") {
+    return "This version favors swaps that keep the target area from changing your mechanics.";
+  }
+  if (input.energy <= 2) {
+    return "This version keeps the habit alive without pretending you are fully charged.";
+  }
+  return "This version balances progress with enough flexibility to actually start.";
+}
+
+export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<WorkoutEngineContext> }) {
   const [input, setInput] = useState<DailyCheckIn>(defaultInput);
-  const [workout, setWorkout] = useState<GeneratedWorkout>(() => generateWorkout(defaultInput));
+  const [workout, setWorkout] = useState<GeneratedWorkout>(() => generateWorkout(defaultInput, engineContext));
   const [message, setMessage] = useState("Generated from a balanced default day. Adjust signals when life changes.");
   const [isPending, startTransition] = useTransition();
 
   const fitScore = useMemo(() => {
-    const timeScore = Math.min(input.timeAvailable, 45) / 45;
-    const energyScore = input.energy / 5;
-    const sorenessScore = (6 - input.soreness) / 5;
-    const crowdingPenalty = input.crowding === "packed" ? 0.12 : input.crowding === "moderate" ? 0.04 : 0;
-    return Math.round(Math.max(38, Math.min(96, (timeScore * 0.28 + energyScore * 0.4 + sorenessScore * 0.32 - crowdingPenalty) * 100)));
-  }, [input]);
+    const preview = generateWorkout(input, engineContext);
+    return preview.readinessScore ?? 70;
+  }, [engineContext, input]);
 
   const coachRead = useMemo(() => {
     if (input.energy <= 2) return "Minimum effective dose";
+    if (input.missedWorkouts === "1-week-plus") return "Deload re-entry";
     if (input.soreness >= 4) return "Recovery-aware session";
     if (input.crowding === "packed") return "Low-wait gym strategy";
     if (input.energy >= 4 && input.timeAvailable >= 40) return "Productive push";
-    return "Steady progress";
+    return "Science-based steady dose";
   }, [input]);
 
   function updateInput<T extends keyof DailyCheckIn>(key: T, value: DailyCheckIn[T]) {
@@ -138,15 +168,15 @@ export function WorkoutGenerator() {
 
   function applyReality(nextInput: DailyCheckIn) {
     setInput(nextInput);
-    const nextWorkout = generateWorkout(nextInput);
+    const nextWorkout = generateWorkout(nextInput, engineContext);
     setWorkout(nextWorkout);
     setMessage("Reality applied. The workout changed before your motivation had to negotiate.");
   }
 
   function generate() {
-    const next = generateWorkout(input);
+    const next = generateWorkout(input, engineContext);
     setWorkout(next);
-    setMessage("Today's plan fits today's life.");
+    setMessage("Today's plan fits today's life and your current training signal.");
   }
 
   function save() {
@@ -165,11 +195,11 @@ export function WorkoutGenerator() {
               <div>
                 <div className="flex items-center gap-2 text-primary">
                   <WandSparkles className="h-5 w-5" />
-                  <span className="text-sm font-semibold">Adaptive briefing</span>
+                  <span className="text-sm font-semibold">Training engine</span>
                 </div>
                 <h2 className="mt-3 text-2xl font-semibold text-white">{coachRead}</h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  FlexFit changes the session before a bad day turns into a missed day.
+                  Deterministic logic first: goal, recovery, volume, RIR, equipment, and fatigue.
                 </p>
               </div>
               <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border border-white/10 bg-black/35">
@@ -253,6 +283,13 @@ export function WorkoutGenerator() {
               tone="blue"
               onChange={(value) => updateInput("soreness", value)}
             />
+            <SignalSlider
+              icon={Bed}
+              label="Sleep quality"
+              value={input.sleepQuality}
+              tone="green"
+              onChange={(value) => updateInput("sleepQuality", value)}
+            />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
               <SelectField<EquipmentAccess>
@@ -274,17 +311,37 @@ export function WorkoutGenerator() {
               options={bodyFocusOptions}
               onChange={(value) => updateInput("bodyFocus", value)}
             />
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+              <SelectField<MissedWorkoutWindow>
+                label="Missed workouts"
+                value={input.missedWorkouts}
+                options={missedWorkoutOptions}
+                onChange={(value) => updateInput("missedWorkouts", value)}
+              />
+              <SelectField<DiscomfortArea>
+                label="Discomfort to avoid"
+                value={input.discomfortArea}
+                options={discomfortOptions}
+                onChange={(value) => updateInput("discomfortArea", value)}
+              />
+            </div>
 
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-muted-foreground">
               <div className="flex items-center gap-2 text-white">
                 <MapPin className="h-4 w-4 text-accent" />
                 Plan tradeoff
               </div>
-              {input.crowding === "packed"
-                ? "This version avoids machine bottlenecks and keeps substitutions close."
-                : input.energy <= 2
-                  ? "This version keeps the habit alive without pretending you are fully charged."
-                  : "This version balances progress with enough flexibility to actually start."}
+              {getTradeoffCopy(input)}
+            </div>
+
+            <div className="grid gap-2 rounded-2xl border border-primary/20 bg-primary/10 p-3 text-xs leading-5 text-primary">
+              <div className="flex items-center gap-2 font-semibold text-white">
+                <ShieldAlert className="h-4 w-4 text-primary" />
+                Recovery guardrails
+              </div>
+              <span>Target: RIR {workout.targetRir ?? 2} / RPE {workout.targetRpe ?? 8}</span>
+              <span>Recovery score: {workout.recoveryScore ?? "--"}/100</span>
+              <span>Deload: {workout.deload?.active ? "Active" : "Not needed"}</span>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">

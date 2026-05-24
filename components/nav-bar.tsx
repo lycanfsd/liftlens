@@ -21,7 +21,6 @@ import { Logo } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
 import { UpgradeCard } from "@/components/upgrade-card";
 import { UserAvatar, getIdentityName } from "@/components/user-avatar";
-import { isPaidPlan } from "@/lib/plans";
 import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +39,7 @@ const navItems = [
 export function NavBar({ userIdentity }: { userIdentity: AppUserIdentity }) {
   const pathname = usePathname();
   const name = getIdentityName(userIdentity);
-  const hasFormCoachAccess = isPaidPlan(userIdentity.planType);
+  const hasFormCoachAccess = userIdentity.hasPremiumAccess;
 
   return (
     <aside className="hidden min-h-screen w-72 shrink-0 border-r border-white/10 bg-black/30 p-5 lg:sticky lg:top-0 lg:flex lg:flex-col">

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { formCoachExercises, isFormCoachExercise, type FormCoachExercise } from "@/lib/form-coach";
-import { isPaidPlan, normalizePlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getUserSubscriptionAccess } from "@/lib/subscription";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_FORM_COACH_MODEL = "gpt-4.1-mini";
@@ -166,15 +166,9 @@ async function authorizeFormCoachAccess() {
     };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("plan_type")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const subscriptionAccess = await getUserSubscriptionAccess(supabase, user.id);
 
-  const planType = normalizePlanType((profile as { plan_type?: unknown } | null)?.plan_type);
-
-  if (!isPaidPlan(planType)) {
+  if (!subscriptionAccess.hasPremiumAccess) {
     return {
       ok: false,
       status: 403,

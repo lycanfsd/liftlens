@@ -74,8 +74,11 @@ The schema is in `supabase/schema.sql` and includes:
 - `workout_exercises`
 - `workout_logs`
 - `form_checks`
+- `daily_ai_messages`
 
 Row-level security is enabled so users can only access their own data.
+
+If your project already has the older `daily_coach_messages` table or a partial `daily_ai_messages` table, run `supabase/daily_ai_messages_migration.sql` in the Supabase SQL Editor to align the daily dashboard coach API with the expected schema.
 
 ### Storage Buckets
 
@@ -169,12 +172,18 @@ using (
 
 The coach page calls `app/api/coach/route.ts`. Today it returns local mock responses from `lib/workout/coach.ts`. Add `OPENAI_API_KEY` and replace the placeholder block with an OpenAI Responses API call when live coaching is ready.
 
+The dashboard calls `app/api/coach/daily/route.ts` once on load for Pro and Elite users. The route checks `profiles.plan_type`, reuses today's saved `daily_ai_messages` row when one exists, and only calls OpenAI when no message has been generated for the current day. Set `DEV_FAKE_AI=true` for local testing without calling OpenAI; this still saves the fake message to Supabase so the banner, dismiss button, and once-per-day behavior can be tested.
+
+For local paid-feature testing, set `DEV_UNLOCK_PREMIUM=true`. This is server-side only and works only when `NODE_ENV !== "production"`; even if the variable is accidentally set on Vercel production, the bypass is ignored. When active, logged-in users are treated as Elite and the app shows a small "Dev Premium Enabled" badge.
+
 The Form Coach page calls `app/api/form-coach/analyze/route.ts`. It extracts 3-5 browser-side JPEG key frames from the uploaded video, sends those frames plus the exercise type to the OpenAI Responses API, and expects structured JSON feedback.
 
 Required:
 
 ```bash
-OPENAI_API_KEY=sk-your-openai-key
+OPENAI_API_KEY=
+DEV_FAKE_AI=true
+DEV_UNLOCK_PREMIUM=true
 OPENAI_FORM_COACH_MODEL=gpt-4.1-mini
 ```
 

@@ -1,10 +1,12 @@
 import type {
   BiggestStruggle,
   BodyFocus,
+  DiscomfortArea,
   EquipmentAccess,
   ExperienceLevel,
   FitnessGoal,
   GymCrowding,
+  MissedWorkoutWindow,
   WeakPoint
 } from "@/lib/types";
 
@@ -64,4 +66,16 @@ export const bodyFocusOptions: { value: BodyFocus; label: string }[] = [
   { value: "pull", label: "Pull" },
   { value: "core", label: "Core" },
   { value: "conditioning", label: "Conditioning" }
+];
+
+export const missedWorkoutOptions: { value: MissedWorkoutWindow; label: string }[] = [
+  { value: "none", label: "No missed days" },
+  { value: "1-day", label: "Missed 1 day" },
+  { value: "2-3-days", label: "Missed 2-3 days" },
+  { value: "1-week-plus", label: "Missed 1 week+" }
+];
+
+export const discomfortOptions: { value: DiscomfortArea; label: string }[] = [
+  { value: "none", label: "No discomfort" },
+  ...weakPoints.map((point) => ({ value: point.value, label: point.label }))
 ];

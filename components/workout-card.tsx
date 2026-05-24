@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, Flame, ListChecks, Route, Sparkles, TimerReset } from "lucide-react";
+import { BarChart3, CheckCircle2, Clock, Flame, Gauge, ListChecks, Route, Sparkles, TimerReset } from "lucide-react";
 
 import { ExerciseCard } from "@/components/exercise-card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,7 @@ export function WorkoutCard({
             </Badge>
             <Badge>{toTitleCase(workout.intensity)}</Badge>
             <Badge>{toTitleCase(workout.focus)}</Badge>
+            {workout.trainingGoal ? <Badge>{toTitleCase(workout.trainingGoal)}</Badge> : null}
           </div>
 
           <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_260px]">
@@ -76,6 +77,23 @@ export function WorkoutCard({
                   Training block
                 </div>
                 <p className="mt-2 text-2xl font-semibold text-white">{workout.exercises.length} moves</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Gauge className="h-4 w-4 text-accent" />
+                  Recovery
+                </div>
+                <p className="mt-2 text-2xl font-semibold text-white">{workout.recoveryScore ?? "--"}/100</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <BarChart3 className="h-4 w-4 text-primary" />
+                  Effort target
+                </div>
+                <p className="mt-2 text-2xl font-semibold text-white">
+                  RIR {workout.targetRir ?? 2}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">RPE {workout.targetRpe ?? 8}</p>
               </div>
             </div>
           </div>
@@ -107,6 +125,26 @@ export function WorkoutCard({
                 {workout.condensed.map((step) => (
                   <p key={step}>{step}</p>
                 ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <h3 className="flex items-center gap-2 font-semibold text-white">
+                <BarChart3 className="h-4 w-4 text-primary" />
+                Training logic
+              </h3>
+              <div className="mt-4 space-y-2 text-sm leading-6 text-muted-foreground">
+                {workout.weeklyVolumeTarget ? <p>Volume landmark: {workout.weeklyVolumeTarget}</p> : null}
+                {workout.deload ? <p>Deload: {workout.deload.reason}</p> : null}
+                {workout.progression ? (
+                  <>
+                    <p>{workout.progression.estimatedOneRepMax}</p>
+                    <p>{workout.progression.performanceTrend}</p>
+                    <p>{workout.progression.adherence}</p>
+                    <p>{workout.progression.weeklyVolume}</p>
+                    <p>{workout.progression.recoveryTrend}</p>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
@@ -153,6 +191,22 @@ export function WorkoutCard({
               {message ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{message}</p> : null}
             </div>
           </div>
+
+          {workout.adaptationNotes?.length ? (
+            <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/10 p-4">
+              <h3 className="flex items-center gap-2 font-semibold text-white">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Adaptive coaching notes
+              </h3>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {workout.adaptationNotes.map((note) => (
+                  <p key={note} className="rounded-xl bg-black/25 p-3 text-sm leading-6 text-muted-foreground">
+                    {note}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       </CardContent>
     </Card>

@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { normalizePlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getEffectivePlanType, hasPremiumAccess, isDevPremiumEnabled } from "@/lib/subscription";
 import type { AppUserIdentity } from "@/lib/types";
 
 function getText(value: unknown) {
@@ -20,7 +21,9 @@ export default async function ProtectedAppLayout({
     email: "demo@flexfit.ai",
     displayName: "Demo Athlete",
     avatarUrl: null,
-    planType: "Free"
+    planType: "Free",
+    hasPremiumAccess: false,
+    devPremiumEnabled: false
   };
 
   if (isSupabaseConfigured) {
@@ -40,13 +43,16 @@ export default async function ProtectedAppLayout({
       .maybeSingle();
 
     const profileRow = (profile ?? {}) as Record<string, unknown>;
+    const planType = normalizePlanType(profileRow.plan_type);
 
     userIdentity = {
       userId: user.id,
       email: getText(profileRow.email) ?? user.email ?? "FlexFit member",
       displayName: getText(profileRow.display_name),
       avatarUrl: getText(profileRow.avatar_url),
-      planType: normalizePlanType(profileRow.plan_type)
+      planType: getEffectivePlanType(planType),
+      hasPremiumAccess: hasPremiumAccess(planType),
+      devPremiumEnabled: isDevPremiumEnabled()
     };
   }
 

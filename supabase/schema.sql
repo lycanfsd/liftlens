@@ -184,6 +184,21 @@ create table if not exists public.form_checks (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.daily_ai_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  message_date date not null,
+  content text not null,
+  source text not null default 'fake' check (
+    source in ('fake', 'openai', 'fallback')
+  ),
+  plan_type text,
+  dismissed_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Required exact Supabase Storage bucket name for AI Form Coach videos: form-videos.
 insert into storage.buckets (
   id,
@@ -294,6 +309,9 @@ add column if not exists safety_warnings jsonb not null default '[]'::jsonb;
 alter table public.form_checks
 add column if not exists next_cues jsonb not null default '[]'::jsonb;
 
+alter table public.daily_ai_messages
+add column if not exists updated_at timestamptz not null default now();
+
 update public.profiles
 set display_name = coalesce(display_name, full_name)
 where display_name is null
@@ -334,6 +352,12 @@ on public.workout_exercises (workout_id, exercise_order);
 create index if not exists form_checks_user_created_idx
 on public.form_checks (user_id, created_at desc);
 
+create unique index if not exists daily_ai_messages_user_date_unique_idx
+on public.daily_ai_messages (user_id, message_date);
+
+create index if not exists daily_ai_messages_user_date_idx
+on public.daily_ai_messages (user_id, message_date desc);
+
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
 before update on public.profiles
@@ -361,6 +385,12 @@ execute function public.set_updated_at();
 drop trigger if exists workout_exercises_set_updated_at on public.workout_exercises;
 create trigger workout_exercises_set_updated_at
 before update on public.workout_exercises
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists daily_ai_messages_set_updated_at on public.daily_ai_messages;
+create trigger daily_ai_messages_set_updated_at
+before update on public.daily_ai_messages
 for each row
 execute function public.set_updated_at();
 
@@ -422,6 +452,7 @@ alter table public.workouts enable row level security;
 alter table public.workout_logs enable row level security;
 alter table public.workout_exercises enable row level security;
 alter table public.form_checks enable row level security;
+alter table public.daily_ai_messages enable row level security;
 
 drop policy if exists profiles_select_own on public.profiles;
 create policy profiles_select_own
@@ -648,6 +679,41 @@ with check (
 drop policy if exists form_checks_delete_own on public.form_checks;
 create policy form_checks_delete_own
 on public.form_checks
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_ai_messages_select_own on public.daily_ai_messages;
+create policy daily_ai_messages_select_own
+on public.daily_ai_messages
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_ai_messages_insert_own on public.daily_ai_messages;
+create policy daily_ai_messages_insert_own
+on public.daily_ai_messages
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_ai_messages_update_own on public.daily_ai_messages;
+create policy daily_ai_messages_update_own
+on public.daily_ai_messages
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_ai_messages_delete_own on public.daily_ai_messages;
+create policy daily_ai_messages_delete_own
+on public.daily_ai_messages
 for delete
 using (
   auth.uid() = user_id
