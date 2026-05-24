@@ -1,15 +1,30 @@
 import { Logo } from "@/components/logo";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { NavBar } from "@/components/nav-bar";
+import { ProfileMenu } from "@/components/profile-menu";
+import type { AppUserIdentity } from "@/lib/types";
 
-export function AppShell({ children, userEmail }: { children: React.ReactNode; userEmail: string }) {
+export function AppShell({
+  children,
+  userIdentity
+}: {
+  children: React.ReactNode;
+  userIdentity: AppUserIdentity;
+}) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
-        <NavBar userEmail={userEmail} />
+        <NavBar userIdentity={userIdentity} />
         <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-30 border-b border-white/10 bg-background/82 px-4 py-3 backdrop-blur lg:hidden">
-            <Logo />
+          <header className="sticky top-0 z-30 border-b border-white/10 bg-background/82 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
+            <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3">
+              <Logo className="lg:hidden [&>span:last-child>span:last-child]:hidden sm:[&>span:last-child>span:last-child]:block" />
+              <div className="hidden min-w-0 lg:block">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">FlexFit AI</p>
+                <p className="mt-1 text-sm text-muted-foreground">Today&apos;s plan fits today&apos;s life.</p>
+              </div>
+              <ProfileMenu identity={userIdentity} />
+            </div>
           </header>
           <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-10 lg:pt-8">
             {children}

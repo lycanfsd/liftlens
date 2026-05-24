@@ -108,6 +108,7 @@ export async function saveOnboardingAction(formData: FormData) {
 
   revalidatePath("/dashboard");
   revalidatePath("/profile");
+  revalidatePath("/", "layout");
   redirect("/dashboard");
 }
 
@@ -218,6 +219,7 @@ export async function updateProfileAction(
 
   revalidatePath("/profile");
   revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
   return {
     ok: true,
     message: "Profile updated. Future workouts have better context now."

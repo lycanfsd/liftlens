@@ -96,10 +96,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
           <div className="flex shrink-0 items-center gap-2">
             {isAuthenticated ? (
               <Button asChild size="sm" className="shadow-green transition hover:-translate-y-0.5">
-                <Link href="/dashboard">
-                  <span className="sm:hidden">App</span>
-                  <span className="hidden sm:inline">Dashboard</span>
-                </Link>
+                <Link href="/dashboard">Open App</Link>
               </Button>
             ) : (
               <>
@@ -152,8 +149,8 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg">
-                  <Link href="/signup">
-                    Start Free
+                  <Link href={isAuthenticated ? "/dashboard" : "/signup"}>
+                    {isAuthenticated ? "Open App" : "Start Free"}
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
@@ -272,7 +269,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
                 <Link href="/pricing">Open pricing page</Link>
               </Button>
             </div>
-            <PricingPreview />
+            <PricingPreview isAuthenticated={isAuthenticated} />
           </div>
         </section>
 
@@ -313,7 +310,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
   );
 }
 
-function PricingPreview() {
+function PricingPreview({ isAuthenticated }: { isAuthenticated: boolean }) {
   const plans = [
     { name: "Free", price: "$0", copy: "Daily adaptive workouts and demo dashboard.", icon: Clock3 },
     { name: "Pro", price: "$9.99/mo", copy: "AI coach, history insights, and meal ideas.", icon: Apple },
@@ -330,7 +327,13 @@ function PricingPreview() {
             <p className="mt-2 text-3xl font-semibold text-white">{plan.price}</p>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">{plan.copy}</p>
             <Button asChild={plan.name === "Free"} disabled={plan.name !== "Free"} className="mt-5 w-full">
-              {plan.name === "Free" ? <Link href="/signup">Start Free</Link> : <span>Stripe checkout coming soon</span>}
+              {plan.name === "Free" ? (
+                <Link href={isAuthenticated ? "/dashboard" : "/signup"}>
+                  {isAuthenticated ? "Open App" : "Start Free"}
+                </Link>
+              ) : (
+                <span>Stripe checkout coming soon</span>
+              )}
             </Button>
           </CardContent>
         </Card>

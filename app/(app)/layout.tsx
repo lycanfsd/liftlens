@@ -3,13 +3,28 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { AppUserIdentity } from "@/lib/types";
+
+function getPlanType(value: unknown): AppUserIdentity["planType"] {
+  return typeof value === "string" && value.toLowerCase() === "pro" ? "Pro" : "Free";
+}
+
+function getText(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
 
 export default async function ProtectedAppLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let userEmail = "demo@flexfit.ai";
+  let userIdentity: AppUserIdentity = {
+    userId: null,
+    email: "demo@flexfit.ai",
+    displayName: "Demo Athlete",
+    avatarUrl: null,
+    planType: "Free"
+  };
 
   if (isSupabaseConfigured) {
     const supabase = await createSupabaseServerClient();
@@ -21,8 +36,22 @@ export default async function ProtectedAppLayout({
       redirect("/login");
     }
 
-    userEmail = user.email ?? "FlexFit member";
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("email, display_name, avatar_url, plan_type")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const profileRow = (profile ?? {}) as Record<string, unknown>;
+
+    userIdentity = {
+      userId: user.id,
+      email: getText(profileRow.email) ?? user.email ?? "FlexFit member",
+      displayName: getText(profileRow.display_name),
+      avatarUrl: getText(profileRow.avatar_url),
+      planType: getPlanType(profileRow.plan_type)
+    };
   }
 
-  return <AppShell userEmail={userEmail}>{children}</AppShell>;
+  return <AppShell userIdentity={userIdentity}>{children}</AppShell>;
 }

@@ -15,6 +15,7 @@ create table if not exists public.profiles (
   user_id uuid not null unique references auth.users(id) on delete cascade,
   email text,
   display_name text,
+  avatar_url text,
   full_name text,
   age integer,
   sex text,
@@ -190,59 +191,28 @@ where user_id is null
 alter table public.profiles
 alter column user_id set not null;
 
+-- Keep every public.profiles column used by Profile, onboarding sync, and auth signup in one migration block.
 alter table public.profiles
-add column if not exists full_name text;
-
-alter table public.profiles
-add column if not exists display_name text;
-
-alter table public.profiles
-add column if not exists age integer;
-
-alter table public.profiles
-add column if not exists sex text;
-
-alter table public.profiles
-add column if not exists height text;
-
-alter table public.profiles
-add column if not exists weight text;
-
-alter table public.profiles
-add column if not exists training_experience text;
-
-alter table public.profiles
-add column if not exists primary_goal text;
-
-alter table public.profiles
-add column if not exists experience_level text;
-
-alter table public.profiles
-add column if not exists weekly_training_days integer;
-
-alter table public.profiles
-add column if not exists preferred_workout_length integer;
-
-alter table public.profiles
-add column if not exists equipment_access text;
-
-alter table public.profiles
-add column if not exists weak_points text[] not null default '{}';
-
-alter table public.profiles
-add column if not exists biggest_struggle text;
-
-alter table public.profiles
-add column if not exists injury_notes text;
-
-alter table public.profiles
-add column if not exists plan_type text not null default 'free';
-
-alter table public.profiles
-add column if not exists created_at timestamptz not null default now();
-
-alter table public.profiles
-add column if not exists updated_at timestamptz not null default now();
+  add column if not exists email text,
+  add column if not exists display_name text,
+  add column if not exists avatar_url text,
+  add column if not exists full_name text,
+  add column if not exists age integer,
+  add column if not exists sex text,
+  add column if not exists height text,
+  add column if not exists weight text,
+  add column if not exists training_experience text,
+  add column if not exists primary_goal text,
+  add column if not exists experience_level text,
+  add column if not exists weekly_training_days integer,
+  add column if not exists preferred_workout_length integer,
+  add column if not exists equipment_access text,
+  add column if not exists weak_points text[] not null default '{}',
+  add column if not exists biggest_struggle text,
+  add column if not exists injury_notes text,
+  add column if not exists plan_type text not null default 'free',
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
 
 alter table public.onboarding_answers
 add column if not exists updated_at timestamptz not null default now();

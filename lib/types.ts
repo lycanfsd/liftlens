@@ -110,3 +110,11 @@ export type WorkoutHistoryItem = {
   soreness: number;
   completedExercises: number;
 };
+
+export type AppUserIdentity = {
+  userId: string | null;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  planType: "Free" | "Pro";
+};

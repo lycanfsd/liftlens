@@ -8,7 +8,6 @@ import {
   History,
   Home,
   LifeBuoy,
-  LogOut,
   MessageCircle,
   UserRound,
   RotateCcw,
@@ -16,10 +15,11 @@ import {
   Target
 } from "lucide-react";
 
-import { logoutAction } from "@/app/auth/actions";
 import { Logo } from "@/components/logo";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { UpgradeCard } from "@/components/upgrade-card";
+import { UserAvatar, getIdentityName } from "@/components/user-avatar";
+import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -33,8 +33,9 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 
-export function NavBar({ userEmail }: { userEmail: string }) {
+export function NavBar({ userIdentity }: { userIdentity: AppUserIdentity }) {
   const pathname = usePathname();
+  const name = getIdentityName(userIdentity);
 
   return (
     <aside className="hidden min-h-screen w-72 shrink-0 border-r border-white/10 bg-black/30 p-5 lg:sticky lg:top-0 lg:flex lg:flex-col">
@@ -68,15 +69,21 @@ export function NavBar({ userEmail }: { userEmail: string }) {
       </div>
       <div className="mt-auto space-y-4">
         <UpgradeCard />
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-          <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
-          <form action={logoutAction} className="mt-3">
-            <Button type="submit" variant="ghost" size="sm" className="w-full justify-start">
-              <LogOut className="h-4 w-4" />
-              Log out
-            </Button>
-          </form>
-        </div>
+        <Link
+          href="/profile"
+          className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 transition hover:border-primary/35 hover:bg-white/[0.07]"
+        >
+          <UserAvatar identity={userIdentity} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="truncate text-sm font-semibold text-white">{name}</p>
+              <Badge className="border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                {userIdentity.planType}
+              </Badge>
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground">{userIdentity.email}</p>
+          </div>
+        </Link>
         <Link href="/pricing" className="flex items-center gap-2 text-xs text-muted-foreground hover:text-white">
           <LifeBuoy className="h-3.5 w-3.5" />
           Pricing and support

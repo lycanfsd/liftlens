@@ -1,6 +1,7 @@
 import { CalendarDays, Flame, Mail, ShieldCheck, Trophy, UserRound } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
+import { AvatarUploader } from "@/components/avatar-uploader";
 import { ProfileForm, type ProfileFormValues } from "@/components/profile-form";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -11,6 +12,8 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type ProfilePageData = {
   email: string;
+  userId: string | null;
+  avatarUrl: string | null;
   accountCreatedAt: string | null;
   planType: string;
   formValues: ProfileFormValues;
@@ -106,6 +109,8 @@ async function getProfilePageData(): Promise<ProfilePageData> {
 
     return {
       email: "demo@flexfit.ai",
+      userId: null,
+      avatarUrl: null,
       accountCreatedAt: null,
       planType: "Free",
       formValues,
@@ -143,6 +148,8 @@ async function getProfilePageData(): Promise<ProfilePageData> {
 
     return {
       email: "Not signed in",
+      userId: null,
+      avatarUrl: null,
       accountCreatedAt: null,
       planType: "Free",
       formValues,
@@ -195,6 +202,8 @@ async function getProfilePageData(): Promise<ProfilePageData> {
 
   return {
     email: user.email ?? (toStringValue(profileRow.email) || "FlexFit member"),
+    userId: user.id,
+    avatarUrl: toStringValue(profileRow.avatar_url) || null,
     accountCreatedAt: user.created_at ?? toStringValue(profileRow.created_at) ?? null,
     planType: toStringValue(profileRow.plan_type) === "pro" ? "Pro" : "Free",
     formValues,
@@ -216,11 +225,14 @@ export default async function ProfilePage() {
       <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10">
           <CardContent className="p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-green">
-                <UserRound className="h-7 w-7" />
-              </span>
-              <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <AvatarUploader
+                userId={data.userId}
+                email={data.email}
+                displayName={data.formValues.display_name}
+                initialAvatarUrl={data.avatarUrl}
+              />
+              <span className="self-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary sm:self-start">
                 {data.planType}
               </span>
             </div>
