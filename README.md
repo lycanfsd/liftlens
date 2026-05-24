@@ -20,6 +20,7 @@ FlexFit AI is a release-ready MVP for an adaptive AI fitness coach. It helps bus
 - `/onboarding`
 - `/dashboard`
 - `/workout`
+- `/form-coach`
 - `/recovery`
 - `/weak-points`
 - `/history`
@@ -72,12 +73,112 @@ The schema is in `supabase/schema.sql` and includes:
 - `workouts`
 - `workout_exercises`
 - `workout_logs`
+- `form_checks`
 
 Row-level security is enabled so users can only access their own data.
 
-## OpenAI Placeholder
+### Storage Buckets
+
+Create the following Supabase Storage buckets before using uploads:
+
+- `avatars`
+- `form-videos` exactly. The app uploads Form Coach videos to this exact bucket name.
+
+The full setup SQL in `supabase/schema.sql` creates the `form-videos` bucket with:
+
+- private access
+- 50MB file size limit
+- allowed video MIME types
+- storage policies so authenticated users can only read, upload, update, and delete objects inside their own `{userId}/...` folder
+
+Form Coach stores videos at:
+
+```text
+{userId}/{timestamp}-{exercise}.{extension}
+```
+
+The first folder must be the authenticated Supabase user id because the `form-videos` storage policies check `storage.foldername(name)[1] = auth.uid()`.
+
+The saved `form_checks.video_url` value is the storage object path for the private video.
+
+If Form Coach shows "Bucket not found", create the missing bucket by running the full `supabase/schema.sql` file again, or paste this bucket-only setup into the Supabase SQL Editor:
+
+```sql
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'form-videos',
+  'form-videos',
+  false,
+  52428800,
+  array['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']
+)
+on conflict (id) do update
+set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists form_videos_select_own on storage.objects;
+create policy form_videos_select_own
+on storage.objects
+for select
+using (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists form_videos_insert_own on storage.objects;
+create policy form_videos_insert_own
+on storage.objects
+for insert
+with check (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists form_videos_update_own on storage.objects;
+create policy form_videos_update_own
+on storage.objects
+for update
+using (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+)
+with check (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists form_videos_delete_own on storage.objects;
+create policy form_videos_delete_own
+on storage.objects
+for delete
+using (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+```
+
+## OpenAI
 
 The coach page calls `app/api/coach/route.ts`. Today it returns local mock responses from `lib/workout/coach.ts`. Add `OPENAI_API_KEY` and replace the placeholder block with an OpenAI Responses API call when live coaching is ready.
+
+The Form Coach page calls `app/api/form-coach/analyze/route.ts`. It extracts 3-5 browser-side JPEG key frames from the uploaded video, sends those frames plus the exercise type to the OpenAI Responses API, and expects structured JSON feedback.
+
+Required:
+
+```bash
+OPENAI_API_KEY=sk-your-openai-key
+OPENAI_FORM_COACH_MODEL=gpt-4.1-mini
+```
+
+The route asks the model to analyze visible form issues only, avoid injury diagnosis, include uncertainty when the camera angle is poor, and ask the user to re-film when the set is unclear.
 
 ## Stripe Placeholder
 

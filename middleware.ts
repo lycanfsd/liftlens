@@ -10,6 +10,7 @@ import {
 const protectedRoutes = [
   "/dashboard",
   "/workout",
+  "/form-coach",
   "/recovery",
   "/weak-points",
   "/history",
@@ -20,6 +21,12 @@ const protectedRoutes = [
 ];
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  if (pathname.startsWith("/_next") || pathname === "/favicon.ico") {
+    return NextResponse.next();
+  }
+
   if (!isSupabaseConfigured || !supabaseUrl || !supabaseAnonKey) {
     return NextResponse.next();
   }
@@ -43,11 +50,15 @@ export async function middleware(request: NextRequest) {
     }
   });
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  let user = null;
 
-  const pathname = request.nextUrl.pathname;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    user = null;
+  }
+
   const isProtected = protectedRoutes.some((route) => pathname.startsWith(route));
   const isAuthPage = pathname === "/login" || pathname === "/signup";
 
@@ -69,6 +80,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|images|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    "/((?!api|_next|favicon.ico|images|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|txt|xml)$).*)"
   ]
 };

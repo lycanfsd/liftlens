@@ -8,23 +8,27 @@ import {
   History,
   Home,
   LifeBuoy,
+  Lock,
   MessageCircle,
   UserRound,
   RotateCcw,
   Settings,
-  Target
+  Target,
+  Video
 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
 import { Badge } from "@/components/ui/badge";
 import { UpgradeCard } from "@/components/upgrade-card";
 import { UserAvatar, getIdentityName } from "@/components/user-avatar";
+import { isPaidPlan } from "@/lib/plans";
 import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/workout", label: "Today", icon: Dumbbell },
+  { href: "/form-coach", label: "Form Coach", icon: Video, proOnly: true },
   { href: "/recovery", label: "Recovery", icon: RotateCcw },
   { href: "/weak-points", label: "Weak points", icon: Target },
   { href: "/history", label: "History", icon: History },
@@ -36,6 +40,7 @@ const navItems = [
 export function NavBar({ userIdentity }: { userIdentity: AppUserIdentity }) {
   const pathname = usePathname();
   const name = getIdentityName(userIdentity);
+  const hasFormCoachAccess = isPaidPlan(userIdentity.planType);
 
   return (
     <aside className="hidden min-h-screen w-72 shrink-0 border-r border-white/10 bg-black/30 p-5 lg:sticky lg:top-0 lg:flex lg:flex-col">
@@ -43,6 +48,7 @@ export function NavBar({ userIdentity }: { userIdentity: AppUserIdentity }) {
       <nav className="mt-8 space-y-1">
         {navItems.map((item) => {
           const active = pathname === item.href;
+          const locked = item.proOnly && !hasFormCoachAccess;
           return (
             <Link
               key={item.href}
@@ -53,7 +59,13 @@ export function NavBar({ userIdentity }: { userIdentity: AppUserIdentity }) {
               )}
             >
               <item.icon className={cn("h-4 w-4", active && "text-primary")} />
-              {item.label}
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {locked ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
+                  <Lock className="h-3 w-3" />
+                  Pro
+                </span>
+              ) : null}
             </Link>
           );
         })}

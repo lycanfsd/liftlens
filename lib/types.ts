@@ -116,5 +116,5 @@ export type AppUserIdentity = {
   email: string;
   displayName: string | null;
   avatarUrl: string | null;
-  planType: "Free" | "Pro";
+  planType: "Free" | "Pro" | "Elite";
 };

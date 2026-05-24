@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { normalizePlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -205,7 +206,7 @@ async function getProfilePageData(): Promise<ProfilePageData> {
     userId: user.id,
     avatarUrl: toStringValue(profileRow.avatar_url) || null,
     accountCreatedAt: user.created_at ?? toStringValue(profileRow.created_at) ?? null,
-    planType: toStringValue(profileRow.plan_type) === "pro" ? "Pro" : "Free",
+    planType: normalizePlanType(profileRow.plan_type),
     formValues,
     snapshot: buildSnapshot(rows, formValues.weekly_training_days)
   };

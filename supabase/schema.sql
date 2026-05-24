@@ -167,6 +167,44 @@ create table if not exists public.workout_exercises (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.form_checks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  exercise text not null check (
+    exercise in ('squat', 'deadlift', 'bench-press', 'overhead-press', 'row', 'pull-up', 'lunge')
+  ),
+  video_url text,
+  form_score integer not null check (
+    form_score between 0 and 100
+  ),
+  positives jsonb not null default '[]'::jsonb,
+  corrections jsonb not null default '[]'::jsonb,
+  safety_warnings jsonb not null default '[]'::jsonb,
+  next_cues jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- Required exact Supabase Storage bucket name for AI Form Coach videos: form-videos.
+insert into storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+values (
+  'form-videos',
+  'form-videos',
+  false,
+  52428800,
+  array['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']
+)
+on conflict (id) do update
+set
+  public = false,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 alter table public.profiles
 drop constraint if exists profiles_id_matches_user_id;
 
@@ -241,6 +279,21 @@ alter column user_id set not null;
 alter table public.workout_exercises
 add column if not exists updated_at timestamptz not null default now();
 
+alter table public.form_checks
+add column if not exists video_url text;
+
+alter table public.form_checks
+add column if not exists positives jsonb not null default '[]'::jsonb;
+
+alter table public.form_checks
+add column if not exists corrections jsonb not null default '[]'::jsonb;
+
+alter table public.form_checks
+add column if not exists safety_warnings jsonb not null default '[]'::jsonb;
+
+alter table public.form_checks
+add column if not exists next_cues jsonb not null default '[]'::jsonb;
+
 update public.profiles
 set display_name = coalesce(display_name, full_name)
 where display_name is null
@@ -277,6 +330,9 @@ on public.workout_exercises (user_id);
 
 create index if not exists workout_exercises_workout_order_idx
 on public.workout_exercises (workout_id, exercise_order);
+
+create index if not exists form_checks_user_created_idx
+on public.form_checks (user_id, created_at desc);
 
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
@@ -365,6 +421,7 @@ alter table public.onboarding_answers enable row level security;
 alter table public.workouts enable row level security;
 alter table public.workout_logs enable row level security;
 alter table public.workout_exercises enable row level security;
+alter table public.form_checks enable row level security;
 
 drop policy if exists profiles_select_own on public.profiles;
 create policy profiles_select_own
@@ -551,4 +608,87 @@ on public.workout_exercises
 for delete
 using (
   auth.uid() = user_id
+);
+
+drop policy if exists form_checks_select_own on public.form_checks;
+create policy form_checks_select_own
+on public.form_checks
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists form_checks_insert_own on public.form_checks;
+create policy form_checks_insert_own
+on public.form_checks
+for insert
+with check (
+  auth.uid() = user_id
+  and (
+    video_url is null
+    or video_url like auth.uid()::text || '/%'
+  )
+);
+
+drop policy if exists form_checks_update_own on public.form_checks;
+create policy form_checks_update_own
+on public.form_checks
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+  and (
+    video_url is null
+    or video_url like auth.uid()::text || '/%'
+  )
+);
+
+drop policy if exists form_checks_delete_own on public.form_checks;
+create policy form_checks_delete_own
+on public.form_checks
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists form_videos_select_own on storage.objects;
+create policy form_videos_select_own
+on storage.objects
+for select
+using (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists form_videos_insert_own on storage.objects;
+create policy form_videos_insert_own
+on storage.objects
+for insert
+with check (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists form_videos_update_own on storage.objects;
+create policy form_videos_update_own
+on storage.objects
+for update
+using (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+)
+with check (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+drop policy if exists form_videos_delete_own on storage.objects;
+create policy form_videos_delete_own
+on storage.objects
+for delete
+using (
+  bucket_id = 'form-videos'
+  and auth.uid()::text = (storage.foldername(name))[1]
 );

@@ -31,7 +31,7 @@ export function AppShell({
           </main>
         </div>
       </div>
-      <MobileBottomNav />
+      <MobileBottomNav userIdentity={userIdentity} />
     </div>
   );
 }

@@ -1,12 +1,14 @@
-import { Activity, CalendarCheck2, ChevronRight, Flame, Gauge, Sparkles, Trophy } from "lucide-react";
+import { Activity, CalendarCheck2, ChevronRight, Flame, Gauge, Lock, Sparkles, Trophy, Video } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { ProgressRing } from "@/components/progress-ring";
 import { StatCard } from "@/components/stat-card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { demoStats } from "@/lib/demo-data";
+import { isPaidPlan, normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { DashboardStat } from "@/lib/types";
@@ -19,6 +21,7 @@ type DashboardData = {
   readinessScore: number;
   readinessTitle: string;
   nextBestAction: string;
+  planType: PlanType;
 };
 
 function calculateStreak(days: string[]) {
@@ -45,7 +48,8 @@ async function getDashboardData(): Promise<DashboardData> {
       insight: "Your best streak comes from lowering the bar on busy days, not skipping them.",
       readinessScore: 82,
       readinessTitle: "Green light, but keep the session efficient",
-      nextBestAction: "Generate a 35-minute full-body session with one packed-gym fallback ready."
+      nextBestAction: "Generate a 35-minute full-body session with one packed-gym fallback ready.",
+      planType: "Free"
     };
   }
 
@@ -62,18 +66,23 @@ async function getDashboardData(): Promise<DashboardData> {
       insight: "Log workouts to unlock personalized consistency insights.",
       readinessScore: 58,
       readinessTitle: "Start with a small, clean win",
-      nextBestAction: "Save your first adaptive workout so FlexFit can learn your rhythm."
+      nextBestAction: "Save your first adaptive workout so FlexFit can learn your rhythm.",
+      planType: "Free"
     };
   }
 
-  const { data: logs } = await supabase
-    .from("workout_logs")
-    .select("completed_at, focus, energy")
-    .eq("user_id", user.id)
-    .order("completed_at", { ascending: false })
-    .limit(50);
+  const [{ data: logs }, { data: profile }] = await Promise.all([
+    supabase
+      .from("workout_logs")
+      .select("completed_at, focus, energy")
+      .eq("user_id", user.id)
+      .order("completed_at", { ascending: false })
+      .limit(50),
+    supabase.from("profiles").select("plan_type").eq("user_id", user.id).maybeSingle()
+  ]);
 
   const rows = (logs ?? []) as { completed_at: string; focus: string | null; energy: number | null }[];
+  const planType = normalizePlanType((profile as { plan_type?: unknown } | null)?.plan_type);
   const days = rows.map((row) => row.completed_at.slice(0, 10));
   const now = Date.now();
   const weekRows = rows.filter((row) => now - new Date(row.completed_at).getTime() <= 7 * 86400000);
@@ -129,13 +138,15 @@ async function getDashboardData(): Promise<DashboardData> {
     nextBestAction:
       rows.length > 0
         ? "Generate today's workout and let energy, soreness, and crowding set the volume."
-        : "Run a 20-30 minute starter workout and save it as completed."
+        : "Run a 20-30 minute starter workout and save it as completed.",
+    planType
   };
 }
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
   const icons = [Flame, Trophy, CalendarCheck2, Activity];
+  const hasFormCoachAccess = isPaidPlan(data.planType);
 
   return (
     <>
@@ -207,6 +218,39 @@ export default async function DashboardPage() {
           />
         ))}
       </div>
+
+      <Card className="mt-6 border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10">
+        <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div className="flex gap-4">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary">
+              <Video className="h-6 w-6" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-primary">New coaching surface</p>
+                {!hasFormCoachAccess ? (
+                  <Badge className="border-primary/25 bg-primary/10 text-primary">
+                    <Lock className="mr-1 h-3 w-3" />
+                    Pro
+                  </Badge>
+                ) : null}
+              </div>
+              <h2 className="mt-2 text-2xl font-semibold text-white">AI Form Coach</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                {hasFormCoachAccess
+                  ? "Upload a short lifting video and get safety-first cues before your next set."
+                  : "Upgrade to Pro to upload lifting videos, get form feedback, and build form check history."}
+              </p>
+            </div>
+          </div>
+          <Button asChild className="w-full sm:w-auto">
+            <a href={hasFormCoachAccess ? "/form-coach" : "/pricing"}>
+              {hasFormCoachAccess ? "Open Form Coach" : "Upgrade to Pro"}
+              <ChevronRight className="h-4 w-4" />
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
 
       <section className="mt-6 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <Card>
