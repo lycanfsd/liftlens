@@ -7,10 +7,19 @@ import { z } from "zod";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyCheckIn, GeneratedWorkout } from "@/lib/types";
+import { generateAdaptiveWorkout, type WorkoutEngineContext } from "@/lib/workout/generator";
+
+const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const DEFAULT_WORKOUT_COACH_MODEL = "gpt-4.1-mini";
 
 export type ActionResult = {
   ok: boolean;
   message: string;
+};
+
+export type WorkoutExplanationResult = {
+  summary: string;
+  source: "fake" | "openai" | "fallback";
 };
 
 export type ProfileActionState = {
@@ -20,7 +29,7 @@ export type ProfileActionState = {
 };
 
 const onboardingSchema = z.object({
-  primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health"]),
+  primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health", "athletic-performance"]),
   experience_level: z.enum(["beginner", "intermediate", "advanced"]),
   weekly_availability: z.coerce.number().min(1).max(7),
   typical_workout_length: z.coerce.number().min(10).max(120),
@@ -122,7 +131,7 @@ const profileSchema = z.object({
   height: z.string().trim().max(40, "Height is too long.").optional(),
   weight: z.string().trim().max(40, "Weight is too long.").optional(),
   training_experience: z.enum(["beginner", "intermediate", "advanced"]).optional(),
-  primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health"]).optional(),
+  primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health", "athletic-performance"]).optional(),
   weekly_training_days: z.preprocess(
     (value) => (value === "" || value === null ? undefined : value),
     z.coerce.number().int().min(1, "Choose at least 1 training day.").max(7, "Training days must be 7 or fewer.").optional()
@@ -141,6 +150,127 @@ const profileSchema = z.object({
 
 function optionalText(value: string | undefined) {
   return value && value.length > 0 ? value : null;
+}
+
+function getResponseText(payload: unknown) {
+  if (typeof payload !== "object" || payload === null) return null;
+
+  const outputText = (payload as { output_text?: unknown }).output_text;
+  if (typeof outputText === "string") return outputText.trim();
+
+  const output = (payload as { output?: unknown }).output;
+  if (!Array.isArray(output)) return null;
+
+  const chunks: string[] = [];
+  for (const item of output) {
+    if (typeof item !== "object" || item === null) continue;
+    const content = (item as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+
+    for (const contentItem of content) {
+      if (typeof contentItem !== "object" || contentItem === null) continue;
+      const text = (contentItem as { text?: unknown }).text;
+      if (typeof text === "string") chunks.push(text);
+    }
+  }
+
+  return chunks.join("").trim() || null;
+}
+
+function fallbackWorkoutSummary(workout: GeneratedWorkout) {
+  return `${workout.strategy ?? "Adaptive session"} selected at readiness ${workout.readinessScore ?? "--"}/100. The plan uses a ${workout.trainingDose ?? workout.intensity} dose, RIR ${workout.targetRir ?? 2}, and prioritizes ${(workout.prioritizedMuscleGroups ?? []).join(", ") || workout.focus} so today stays productive without outrunning recovery.`;
+}
+
+export async function enhanceWorkoutExplanationAction(
+  workout: GeneratedWorkout
+): Promise<WorkoutExplanationResult> {
+  if (process.env.DEV_FAKE_AI === "true") {
+    return {
+      summary: fallbackWorkoutSummary(workout),
+      source: "fake"
+    };
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return {
+      summary: fallbackWorkoutSummary(workout),
+      source: "fallback"
+    };
+  }
+
+  try {
+    const response = await fetch(OPENAI_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_WORKOUT_COACH_MODEL ?? DEFAULT_WORKOUT_COACH_MODEL,
+        store: false,
+        input: [
+          {
+            role: "system",
+            content:
+              "You are FlexFit AI, a premium physique coach. Polish the explanation only. Do not invent exercises, sets, reps, medical diagnoses, or new safety claims. Keep it under 75 words."
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              name: workout.name,
+              strategy: workout.strategy,
+              readinessScore: workout.readinessScore,
+              trainingDose: workout.trainingDose,
+              prioritizedMuscleGroups: workout.prioritizedMuscleGroups,
+              why: workout.why,
+              whatChanged: workout.explanation?.whatChanged,
+              safety: workout.explanation?.safety
+            })
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      return {
+        summary: fallbackWorkoutSummary(workout),
+        source: "fallback"
+      };
+    }
+
+    const payload = await response.json().catch(() => null);
+    const summary = getResponseText(payload);
+
+    return {
+      summary: summary ?? fallbackWorkoutSummary(workout),
+      source: summary ? "openai" : "fallback"
+    };
+  } catch {
+    return {
+      summary: fallbackWorkoutSummary(workout),
+      source: "fallback"
+    };
+  }
+}
+
+export async function generateAdaptiveWorkoutAction(
+  input: DailyCheckIn,
+  context?: Partial<WorkoutEngineContext>
+): Promise<{ workout: GeneratedWorkout; message: string }> {
+  const workout = generateAdaptiveWorkout(input, context);
+  const explanation = await enhanceWorkoutExplanationAction(workout);
+
+  return {
+    workout: {
+      ...workout,
+      aiSummary: {
+        text: explanation.summary,
+        source: explanation.source
+      }
+    },
+    message: "Server engine generated today's adaptive training dose."
+  };
 }
 
 export async function updateProfileAction(
@@ -233,6 +363,8 @@ const workoutSchema = z.object({
     duration: z.number(),
     focus: z.string(),
     intensity: z.string(),
+    readinessScore: z.number().optional(),
+    trainingDose: z.string().optional(),
     warmup: z.array(z.string()),
     exercises: z.array(
       z.object({
@@ -244,20 +376,43 @@ const workoutSchema = z.object({
         rest: z.string(),
         cue: z.string(),
         substitution: z.string()
-      })
+      }).passthrough()
     ),
     why: z.array(z.string()),
     condensed: z.array(z.string())
-  }),
+  }).passthrough(),
   input: z.object({
     timeAvailable: z.number(),
     energy: z.number(),
     soreness: z.number(),
+    sleepQuality: z.number().optional(),
+    stressLevel: z.number().optional(),
     equipment: z.string(),
     crowding: z.string(),
-    bodyFocus: z.string()
-  })
+    bodyFocus: z.string(),
+    missedWorkouts: z.string().optional(),
+    discomfortArea: z.string().optional(),
+    sorenessByMuscle: z.record(z.number()).optional(),
+    injuryAreas: z.array(z.string()).optional(),
+    preferredSplit: z.string().optional(),
+    currentProgramPhase: z.string().optional(),
+    dislikedExercises: z.array(z.string()).optional()
+  }).passthrough()
 });
+
+function jsonSafe(value: unknown) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function shouldRetryLegacyWorkoutInsert(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "PGRST204" ||
+    error.code === "42703" ||
+    error.message?.toLowerCase().includes("schema cache") ||
+    error.message?.toLowerCase().includes("column")
+  );
+}
 
 export async function saveWorkoutAction(
   workout: GeneratedWorkout,
@@ -282,27 +437,56 @@ export async function saveWorkoutAction(
     return { ok: false, message: "Log in again to save this workout." };
   }
 
-  const { data: savedWorkout, error } = await supabase
+  const workoutForSave = parsed.data.workout as unknown as GeneratedWorkout;
+  const inputForSave = parsed.data.input as unknown as DailyCheckIn;
+
+  const legacyWorkoutInsert = {
+    user_id: user.id,
+    workout_name: workoutForSave.name,
+    duration: workoutForSave.duration,
+    focus: workoutForSave.focus,
+    intensity: workoutForSave.intensity,
+    energy: inputForSave.energy,
+    soreness: inputForSave.soreness,
+    time_available: inputForSave.timeAvailable,
+    equipment: inputForSave.equipment,
+    gym_crowding: inputForSave.crowding,
+    body_focus: inputForSave.bodyFocus,
+    warmup: workoutForSave.warmup,
+    why_it_fits: workoutForSave.why,
+    condensed_version: workoutForSave.condensed,
+    completed_exercises: workoutForSave.exercises.length
+  };
+
+  const enhancedWorkoutInsert = {
+    ...legacyWorkoutInsert,
+    workout_date: new Date().toISOString().slice(0, 10),
+    readiness_score: workoutForSave.readinessScore ?? null,
+    training_dose: workoutForSave.trainingDose ?? workoutForSave.intensity,
+    input_snapshot: jsonSafe(inputForSave),
+    workout_json: jsonSafe(workoutForSave),
+    explanation:
+      workoutForSave.explanation?.whyThisWorkout ??
+      workoutForSave.why.join("\n")
+  };
+
+  let workoutResult = await supabase
     .from("workouts")
-    .insert({
-      user_id: user.id,
-      workout_name: parsed.data.workout.name,
-      duration: parsed.data.workout.duration,
-      focus: parsed.data.workout.focus,
-      intensity: parsed.data.workout.intensity,
-      energy: parsed.data.input.energy,
-      soreness: parsed.data.input.soreness,
-      time_available: parsed.data.input.timeAvailable,
-      equipment: parsed.data.input.equipment,
-      gym_crowding: parsed.data.input.crowding,
-      body_focus: parsed.data.input.bodyFocus,
-      warmup: parsed.data.workout.warmup,
-      why_it_fits: parsed.data.workout.why,
-      condensed_version: parsed.data.workout.condensed,
-      completed_exercises: parsed.data.workout.exercises.length
-    })
+    .insert(enhancedWorkoutInsert)
     .select("id")
     .single();
+
+  if (shouldRetryLegacyWorkoutInsert(workoutResult.error)) {
+    console.error("[saveWorkoutAction] Enhanced workout columns are missing; retrying legacy insert.", {
+      message: workoutResult.error?.message,
+      code: workoutResult.error?.code,
+      expectedColumns: ["workout_date", "readiness_score", "training_dose", "input_snapshot", "workout_json", "explanation"]
+    });
+
+    workoutResult = await supabase.from("workouts").insert(legacyWorkoutInsert).select("id").single();
+  }
+
+  const { data: savedWorkout, error } = workoutResult;
 
   if (error || !savedWorkout) {
     return { ok: false, message: error?.message ?? "Unable to save workout." };

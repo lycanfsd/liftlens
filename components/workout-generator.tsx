@@ -1,16 +1,35 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Activity, BatteryMedium, Bed, Clock3, MapPin, RotateCcw, ShieldAlert, WandSparkles } from "lucide-react";
+import {
+  Activity,
+  BatteryMedium,
+  Bed,
+  Brain,
+  Clock3,
+  MapPin,
+  RotateCcw,
+  ShieldAlert,
+  WandSparkles
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { saveWorkoutAction } from "@/app/app-actions";
+import { generateAdaptiveWorkoutAction, saveWorkoutAction } from "@/app/app-actions";
 import { WorkoutCard } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { bodyFocusOptions, crowdingOptions, discomfortOptions, equipmentOptions, missedWorkoutOptions } from "@/lib/constants";
+import {
+  bodyFocusOptions,
+  crowdingOptions,
+  discomfortOptions,
+  equipmentOptions,
+  missedWorkoutOptions,
+  preferredSplitOptions,
+  programPhaseOptions,
+  weakPoints
+} from "@/lib/constants";
 import type {
   BodyFocus,
   DailyCheckIn,
@@ -18,22 +37,59 @@ import type {
   EquipmentAccess,
   GeneratedWorkout,
   GymCrowding,
-  MissedWorkoutWindow
+  MissedWorkoutWindow,
+  PreferredSplit,
+  ProgramPhase,
+  WeakPoint
 } from "@/lib/types";
 import { generateWorkout, type WorkoutEngineContext } from "@/lib/workout/generator";
 import { cn } from "@/lib/utils";
+
+const sorenessMuscles: WeakPoint[] = ["chest", "shoulders", "back", "legs", "glutes", "core"];
 
 const defaultInput: DailyCheckIn = {
   timeAvailable: 35,
   energy: 3,
   soreness: 2,
   sleepQuality: 3,
+  stressLevel: 3,
   equipment: "full-gym",
   crowding: "moderate",
   bodyFocus: "auto",
   missedWorkouts: "none",
-  discomfortArea: "none"
+  discomfortArea: "none",
+  sorenessByMuscle: {
+    chest: 2,
+    shoulders: 2,
+    arms: 2,
+    back: 2,
+    legs: 2,
+    glutes: 2,
+    core: 2,
+    conditioning: 2
+  },
+  injuryAreas: [],
+  preferredSplit: "auto",
+  currentProgramPhase: "build",
+  dislikedExercises: []
 };
+
+function withGlobalSoreness(input: DailyCheckIn, soreness: number): DailyCheckIn {
+  return {
+    ...input,
+    soreness,
+    sorenessByMuscle: {
+      chest: soreness,
+      shoulders: soreness,
+      arms: soreness,
+      back: soreness,
+      legs: soreness,
+      glutes: soreness,
+      core: soreness,
+      conditioning: soreness
+    }
+  };
+}
 
 const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
   {
@@ -44,7 +100,10 @@ const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
   {
     label: "Low battery",
     copy: "Keep the streak alive",
-    input: { ...defaultInput, timeAvailable: 25, energy: 2, soreness: 3, sleepQuality: 2, bodyFocus: "upper" }
+    input: withGlobalSoreness(
+      { ...defaultInput, timeAvailable: 25, energy: 2, sleepQuality: 2, stressLevel: 4, bodyFocus: "upper" },
+      3
+    )
   },
   {
     label: "Packed gym",
@@ -54,12 +113,15 @@ const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
   {
     label: "Ready to push",
     copy: "More output, still controlled",
-    input: { ...defaultInput, timeAvailable: 50, energy: 5, soreness: 1, bodyFocus: "full-body" }
+    input: withGlobalSoreness(
+      { ...defaultInput, timeAvailable: 55, energy: 5, sleepQuality: 5, stressLevel: 1, bodyFocus: "full-body" },
+      1
+    )
   },
   {
     label: "Missed week",
     copy: "No guilt re-entry dose",
-    input: { ...defaultInput, timeAvailable: 30, energy: 3, soreness: 2, missedWorkouts: "1-week-plus" }
+    input: { ...defaultInput, timeAvailable: 30, energy: 3, soreness: 2, missedWorkouts: "1-week-plus", currentProgramPhase: "return" }
   }
 ];
 
@@ -142,6 +204,84 @@ function getTradeoffCopy(input: DailyCheckIn) {
   return "This version balances progress with enough flexibility to actually start.";
 }
 
+function MuscleSorenessGrid({
+  soreness,
+  onChange
+}: {
+  soreness: DailyCheckIn["sorenessByMuscle"];
+  onChange: (muscle: WeakPoint, value: number) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>Muscle soreness map</Label>
+          <p className="mt-1 text-xs text-muted-foreground">High soreness reduces or removes direct volume.</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {sorenessMuscles.map((muscle) => (
+          <div key={muscle} className="rounded-xl bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-white">
+                {weakPoints.find((point) => point.value === muscle)?.label ?? muscle}
+              </span>
+              <span className="text-xs text-muted-foreground">{soreness[muscle] ?? 2}/5</span>
+            </div>
+            <input
+              type="range"
+              min={1}
+              max={5}
+              value={soreness[muscle] ?? 2}
+              onChange={(event) => onChange(muscle, Number(event.target.value))}
+              className="mt-2 w-full accent-cyan-300"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InjuryAreaButtons({
+  value,
+  onChange
+}: {
+  value: DiscomfortArea[];
+  onChange: (value: DiscomfortArea[]) => void;
+}) {
+  function toggle(area: WeakPoint) {
+    onChange(value.includes(area) ? value.filter((item) => item !== area) : [...value, area]);
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <Label>Limitations to protect</Label>
+      <p className="mt-1 text-xs text-muted-foreground">These remove risky movements and add safer swaps.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(["shoulders", "back", "legs", "glutes", "chest", "arms"] as WeakPoint[]).map((area) => {
+          const selected = value.includes(area);
+          return (
+            <button
+              key={area}
+              type="button"
+              onClick={() => toggle(area)}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                selected
+                  ? "border-primary/40 bg-primary/15 text-primary"
+                  : "border-white/10 bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08] hover:text-white"
+              )}
+            >
+              {weakPoints.find((point) => point.value === area)?.label ?? area}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<WorkoutEngineContext> }) {
   const [input, setInput] = useState<DailyCheckIn>(defaultInput);
   const [workout, setWorkout] = useState<GeneratedWorkout>(() => generateWorkout(defaultInput, engineContext));
@@ -166,6 +306,36 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
     setInput((current) => ({ ...current, [key]: value }));
   }
 
+  function updateMuscleSoreness(muscle: WeakPoint, value: number) {
+    setInput((current) => {
+      const nextSoreness = { ...current.sorenessByMuscle, [muscle]: value };
+      const values = sorenessMuscles.map((item) => nextSoreness[item] ?? current.soreness);
+      const average = Math.round(values.reduce((sum, item) => sum + item, 0) / values.length);
+      return {
+        ...current,
+        soreness: average,
+        sorenessByMuscle: nextSoreness
+      };
+    });
+  }
+
+  function updateGlobalSoreness(value: number) {
+    setInput((current) => ({
+      ...current,
+      soreness: value,
+      sorenessByMuscle: {
+        chest: value,
+        shoulders: value,
+        arms: value,
+        back: value,
+        legs: value,
+        glutes: value,
+        core: value,
+        conditioning: value
+      }
+    }));
+  }
+
   function applyReality(nextInput: DailyCheckIn) {
     setInput(nextInput);
     const nextWorkout = generateWorkout(nextInput, engineContext);
@@ -176,7 +346,13 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
   function generate() {
     const next = generateWorkout(input, engineContext);
     setWorkout(next);
-    setMessage("Today's plan fits today's life and your current training signal.");
+    setMessage("Building the server-side training dose from today's inputs.");
+
+    startTransition(async () => {
+      const result = await generateAdaptiveWorkoutAction(input, engineContext);
+      setWorkout(result.workout);
+      setMessage(result.message);
+    });
   }
 
   function save() {
@@ -281,7 +457,7 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
               label="Soreness"
               value={input.soreness}
               tone="blue"
-              onChange={(value) => updateInput("soreness", value)}
+              onChange={updateGlobalSoreness}
             />
             <SignalSlider
               icon={Bed}
@@ -290,6 +466,15 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
               tone="green"
               onChange={(value) => updateInput("sleepQuality", value)}
             />
+            <SignalSlider
+              icon={Brain}
+              label="Stress"
+              value={input.stressLevel}
+              tone="blue"
+              onChange={(value) => updateInput("stressLevel", value)}
+            />
+
+            <MuscleSorenessGrid soreness={input.sorenessByMuscle} onChange={updateMuscleSoreness} />
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
               <SelectField<EquipmentAccess>
@@ -309,8 +494,22 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
               label="Body focus"
               value={input.bodyFocus}
               options={bodyFocusOptions}
-              onChange={(value) => updateInput("bodyFocus", value)}
-            />
+                onChange={(value) => updateInput("bodyFocus", value)}
+              />
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+              <SelectField<PreferredSplit>
+                label="Preferred split"
+                value={input.preferredSplit}
+                options={preferredSplitOptions}
+                onChange={(value) => updateInput("preferredSplit", value)}
+              />
+              <SelectField<ProgramPhase>
+                label="Program phase"
+                value={input.currentProgramPhase}
+                options={programPhaseOptions}
+                onChange={(value) => updateInput("currentProgramPhase", value)}
+              />
+            </div>
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
               <SelectField<MissedWorkoutWindow>
                 label="Missed workouts"
@@ -323,6 +522,25 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
                 value={input.discomfortArea}
                 options={discomfortOptions}
                 onChange={(value) => updateInput("discomfortArea", value)}
+              />
+            </div>
+            <InjuryAreaButtons value={input.injuryAreas} onChange={(value) => updateInput("injuryAreas", value)} />
+
+            <div className="grid gap-2">
+              <Label htmlFor="dislikedExercises">Exercises to avoid today</Label>
+              <Input
+                id="dislikedExercises"
+                placeholder="Example: squats, pull-ups, bench"
+                value={input.dislikedExercises.join(", ")}
+                onChange={(event) =>
+                  updateInput(
+                    "dislikedExercises",
+                    event.target.value
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean)
+                  )
+                }
               />
             </div>
 
@@ -341,6 +559,7 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
               </div>
               <span>Target: RIR {workout.targetRir ?? 2} / RPE {workout.targetRpe ?? 8}</span>
               <span>Recovery score: {workout.recoveryScore ?? "--"}/100</span>
+              <span>Dose: {workout.trainingDose ?? workout.intensity}</span>
               <span>Deload: {workout.deload?.active ? "Active" : "Not needed"}</span>
             </div>
 

@@ -3,7 +3,8 @@ export type FitnessGoal =
   | "build-muscle"
   | "recomposition"
   | "strength"
-  | "general-health";
+  | "general-health"
+  | "athletic-performance";
 
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
 
@@ -38,7 +39,8 @@ export type TrainingGoalMode =
   | "strength"
   | "fat-loss"
   | "recomposition"
-  | "general-fitness";
+  | "general-fitness"
+  | "athletic-performance";
 
 export type BodyFocus =
   | "auto"
@@ -54,22 +56,60 @@ export type MissedWorkoutWindow = "none" | "1-day" | "2-3-days" | "1-week-plus";
 
 export type DiscomfortArea = WeakPoint | "none";
 
+export type PreferredSplit =
+  | "auto"
+  | "full-body"
+  | "upper-lower"
+  | "push-pull-legs"
+  | "body-part"
+  | "athletic";
+
+export type ProgramPhase = "base" | "build" | "intensification" | "deload" | "return";
+
+export type TrainingDose = "low" | "moderate" | "high" | "deload";
+
+export type ReadinessLabel = "low" | "moderate" | "high";
+
+export type StrategyType =
+  | "Push day"
+  | "Productive day"
+  | "Maintenance day"
+  | "Recovery-biased day"
+  | "Deload day"
+  | "Weak-point priority day"
+  | "Express session";
+
+export type MuscleSoreness = Partial<Record<WeakPoint, number>>;
+
+export type InputImpact = {
+  signal: string;
+  value: string;
+  effect: string;
+  level: "positive" | "neutral" | "caution";
+};
+
 export type DailyCheckIn = {
   timeAvailable: number;
   energy: number;
   soreness: number;
   sleepQuality: number;
+  stressLevel: number;
   equipment: EquipmentAccess;
   crowding: GymCrowding;
   bodyFocus: BodyFocus;
   missedWorkouts: MissedWorkoutWindow;
   discomfortArea: DiscomfortArea;
+  sorenessByMuscle: MuscleSoreness;
+  injuryAreas: DiscomfortArea[];
+  preferredSplit: PreferredSplit;
+  currentProgramPhase: ProgramPhase;
+  dislikedExercises: string[];
 };
 
 export type ExercisePrescription = {
   name: string;
   muscleGroup: WeakPoint | "full-body";
-  equipment: EquipmentAccess | "cable" | "barbell" | "machine" | "kettlebell";
+  equipment: EquipmentAccess | "cable" | "barbell" | "machine" | "kettlebell" | "band";
   movementPattern?: string;
   targetRir?: number;
   targetRpe?: number;
@@ -78,6 +118,11 @@ export type ExercisePrescription = {
   stimulusToFatigue?: number;
   progressionRule?: string;
   adaptation?: string;
+  rationale?: string;
+  supersetWith?: string;
+  primaryTargets?: WeakPoint[];
+  secondaryTargets?: WeakPoint[];
+  safetyNote?: string;
   sets: number;
   reps: string;
   rest: string;
@@ -92,8 +137,14 @@ export type GeneratedWorkout = {
   focus: BodyFocus;
   trainingGoal?: TrainingGoalMode;
   intensity: "restore" | "steady" | "push";
+  readinessLabel?: ReadinessLabel;
   readinessScore?: number;
   recoveryScore?: number;
+  trainingDose?: TrainingDose;
+  strategy?: StrategyType;
+  todayStrategy?: string;
+  volumeMultiplier?: number;
+  prioritizedMuscleGroups?: WeakPoint[];
   targetRir?: number;
   targetRpe?: number;
   weeklyVolumeTarget?: string;
@@ -110,6 +161,30 @@ export type GeneratedWorkout = {
     recoveryTrend: string;
   };
   adaptationNotes?: string[];
+  inputImpacts?: InputImpact[];
+  explanation?: {
+    whyThisWorkout: string;
+    whatChanged: string[];
+    todayMainFocus: string;
+    whatToAvoid: string[];
+    progressNextTime: string;
+    safety: string[];
+  };
+  cooldown?: string[];
+  notes?: string[];
+  aiSummary?: {
+    text: string;
+    source: "fake" | "openai" | "fallback";
+  };
+  inputSnapshot?: DailyCheckIn;
+  debug?: {
+    readinessCalculation: string[];
+    volumeMultiplier: number;
+    exerciseSubstitutions: string[];
+    selectedPriorities: string[];
+    avoidedExercises: string[];
+    finalReasoning: string[];
+  };
   warmup: string[];
   exercises: ExercisePrescription[];
   why: string[];

@@ -7,6 +7,8 @@ import type {
   FitnessGoal,
   GymCrowding,
   MissedWorkoutWindow,
+  PreferredSplit,
+  ProgramPhase,
   WeakPoint
 } from "@/lib/types";
 
@@ -15,6 +17,7 @@ export const fitnessGoals: { value: FitnessGoal; label: string; copy: string }[]
   { value: "build-muscle", label: "Build muscle", copy: "Progressive hypertrophy" },
   { value: "recomposition", label: "Recomposition", copy: "Strength plus consistency" },
   { value: "strength", label: "Strength", copy: "Practice heavy patterns" },
+  { value: "athletic-performance", label: "Athletic performance", copy: "Power, resilience, and output" },
   { value: "general-health", label: "General health", copy: "Move well and feel better" }
 ];
 
@@ -78,4 +81,21 @@ export const missedWorkoutOptions: { value: MissedWorkoutWindow; label: string }
 export const discomfortOptions: { value: DiscomfortArea; label: string }[] = [
   { value: "none", label: "No discomfort" },
   ...weakPoints.map((point) => ({ value: point.value, label: point.label }))
+];
+
+export const preferredSplitOptions: { value: PreferredSplit; label: string }[] = [
+  { value: "auto", label: "Auto-select" },
+  { value: "full-body", label: "Full body" },
+  { value: "upper-lower", label: "Upper/lower" },
+  { value: "push-pull-legs", label: "Push/pull/legs" },
+  { value: "body-part", label: "Physique focus" },
+  { value: "athletic", label: "Athletic" }
+];
+
+export const programPhaseOptions: { value: ProgramPhase; label: string }[] = [
+  { value: "base", label: "Base building" },
+  { value: "build", label: "Progressive build" },
+  { value: "intensification", label: "Harder training block" },
+  { value: "deload", label: "Deload" },
+  { value: "return", label: "Return after time off" }
 ];

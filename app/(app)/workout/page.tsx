@@ -6,7 +6,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ExperienceLevel, FitnessGoal, WeakPoint } from "@/lib/types";
 import type { PerformanceTrend, WorkoutEngineContext } from "@/lib/workout/generator";
 
-const fitnessGoalValues = ["lose-fat", "build-muscle", "recomposition", "strength", "general-health"];
+const fitnessGoalValues = ["lose-fat", "build-muscle", "recomposition", "strength", "general-health", "athletic-performance"];
 const experienceValues = ["beginner", "intermediate", "advanced"];
 const weakPointValues = ["chest", "shoulders", "arms", "back", "legs", "glutes", "core", "conditioning"];
 
@@ -57,7 +57,7 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
   const [{ data: profile }, { data: logs }, { data: exercises }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("primary_goal, training_experience, experience_level, weekly_training_days, weak_points")
+      .select("primary_goal, training_experience, experience_level, weekly_training_days, preferred_workout_length, weak_points, injury_notes, biggest_struggle")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase
@@ -96,7 +96,14 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
     experienceLevel: asExperience(profileRow.training_experience || profileRow.experience_level),
     weeklyTrainingDays:
       typeof profileRow.weekly_training_days === "number" ? Math.min(Math.max(profileRow.weekly_training_days, 1), 7) : 4,
+    preferredWorkoutLength:
+      typeof profileRow.preferred_workout_length === "number" ? Math.min(Math.max(profileRow.preferred_workout_length, 10), 120) : null,
     weakPoints: asWeakPoints(profileRow.weak_points),
+    injuryNotes: typeof profileRow.injury_notes === "string" ? profileRow.injury_notes : null,
+    dislikedExercises:
+      typeof profileRow.biggest_struggle === "string" && profileRow.biggest_struggle === "gym-anxiety"
+        ? ["barbell"]
+        : [],
     completedThisWeek: currentWeekLogs.length,
     completedLastWeek: previousWeekLogs.length,
     averageEnergy,

@@ -27,7 +27,7 @@ create table if not exists public.profiles (
   ),
   primary_goal text check (
     primary_goal is null
-    or primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health')
+    or primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health', 'athletic-performance')
   ),
   experience_level text check (
     experience_level is null
@@ -67,7 +67,7 @@ create table if not exists public.onboarding_answers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
   primary_goal text not null check (
-    primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health')
+    primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health', 'athletic-performance')
   ),
   experience_level text not null check (
     experience_level in ('beginner', 'intermediate', 'advanced')
@@ -99,6 +99,7 @@ create table if not exists public.onboarding_answers (
 create table if not exists public.workouts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  workout_date date not null default current_date,
   workout_name text not null,
   duration integer not null check (
     duration between 1 and 180
@@ -125,6 +126,17 @@ create table if not exists public.workouts (
   why_it_fits text[] not null default '{}',
   condensed_version text[] not null default '{}',
   completed_exercises integer not null default 0,
+  readiness_score integer check (
+    readiness_score is null
+    or readiness_score between 0 and 100
+  ),
+  training_dose text check (
+    training_dose is null
+    or training_dose in ('low', 'moderate', 'high', 'deload', 'restore', 'steady', 'push')
+  ),
+  input_snapshot jsonb not null default '{}'::jsonb,
+  workout_json jsonb not null default '{}'::jsonb,
+  explanation text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -272,6 +284,63 @@ add column if not exists updated_at timestamptz not null default now();
 
 alter table public.workouts
 add column if not exists updated_at timestamptz not null default now();
+
+alter table public.workouts
+add column if not exists workout_date date not null default current_date;
+
+alter table public.workouts
+add column if not exists readiness_score integer;
+
+alter table public.workouts
+add column if not exists training_dose text;
+
+alter table public.workouts
+add column if not exists input_snapshot jsonb not null default '{}'::jsonb;
+
+alter table public.workouts
+add column if not exists workout_json jsonb not null default '{}'::jsonb;
+
+alter table public.workouts
+add column if not exists explanation text;
+
+alter table public.profiles
+drop constraint if exists profiles_primary_goal_check;
+
+alter table public.profiles
+add constraint profiles_primary_goal_check
+check (
+  primary_goal is null
+  or primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health', 'athletic-performance')
+);
+
+alter table public.onboarding_answers
+drop constraint if exists onboarding_answers_primary_goal_check;
+
+alter table public.onboarding_answers
+add constraint onboarding_answers_primary_goal_check
+check (
+  primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health', 'athletic-performance')
+);
+
+alter table public.workouts
+drop constraint if exists workouts_training_dose_check;
+
+alter table public.workouts
+add constraint workouts_training_dose_check
+check (
+  training_dose is null
+  or training_dose in ('low', 'moderate', 'high', 'deload', 'restore', 'steady', 'push')
+);
+
+alter table public.workouts
+drop constraint if exists workouts_readiness_score_check;
+
+alter table public.workouts
+add constraint workouts_readiness_score_check
+check (
+  readiness_score is null
+  or readiness_score between 0 and 100
+);
 
 alter table public.workout_logs
 add column if not exists created_at timestamptz not null default now();
