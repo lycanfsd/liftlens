@@ -1,4 +1,4 @@
-import { Gauge, Link2, Repeat2, ShieldAlert } from "lucide-react";
+import { ChevronDown, Gauge, Link2, Repeat2, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { ExercisePrescription } from "@/lib/types";
@@ -79,6 +79,11 @@ function compactSafety(note: string) {
   return note.replace(/\.$/, "");
 }
 
+function repsInReserveLabel(rir?: number, rpe?: number) {
+  const reserve = rir ?? 2;
+  return `Leave ${reserve} ${reserve === 1 ? "rep" : "reps"} in reserve${rpe ? ` - RPE ${rpe}` : ""}`;
+}
+
 function ExercisePills({ pills }: { pills: ExercisePill[] }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -94,7 +99,15 @@ function ExercisePills({ pills }: { pills: ExercisePill[] }) {
   );
 }
 
-export function ExerciseCard({ exercise, index }: { exercise: ExercisePrescription; index: number }) {
+export function ExerciseCard({
+  exercise,
+  index,
+  advanced = false
+}: {
+  exercise: ExercisePrescription;
+  index: number;
+  advanced?: boolean;
+}) {
   const insights = exerciseInsights(exercise);
 
   return (
@@ -111,20 +124,7 @@ export function ExerciseCard({ exercise, index }: { exercise: ExercisePrescripti
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{exercise.cue}</p>
 
-          {insights.length ? (
-            <div className="mt-3">
-              <ExercisePills pills={insights} />
-            </div>
-          ) : null}
-
-          {exercise.supersetWith ? (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-              <Link2 className="h-3.5 w-3.5 text-accent" />
-              Superset: {exercise.supersetWith}
-            </div>
-          ) : null}
-
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs sm:max-w-md">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
             <div className="rounded-xl bg-white/[0.05] p-2">
               <div className="text-muted-foreground">Sets</div>
               <div className="mt-1 font-semibold text-white">{exercise.sets}</div>
@@ -137,39 +137,59 @@ export function ExerciseCard({ exercise, index }: { exercise: ExercisePrescripti
               <div className="text-muted-foreground">Rest</div>
               <div className="mt-1 font-semibold text-white">{exercise.rest}</div>
             </div>
-          </div>
-          <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+            <div className="rounded-xl bg-white/[0.05] p-2">
               <div className="flex items-center gap-1 text-muted-foreground">
                 <Gauge className="h-3 w-3 text-primary" />
                 Effort
               </div>
-              <div className="mt-1 font-semibold text-white">
-                RIR {exercise.targetRir ?? 2} / RPE {exercise.targetRpe ?? 8}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              <div className="text-muted-foreground">SFR</div>
-              <div className="mt-1 font-semibold text-white">{exercise.stimulusToFatigue ?? "--"}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
-              <div className="text-muted-foreground">Fatigue</div>
-              <div className="mt-1 font-semibold text-white">{exercise.fatigueScore ?? "--"}/5</div>
+              <div className="mt-1 font-semibold text-white">{repsInReserveLabel(exercise.targetRir, exercise.targetRpe)}</div>
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent">
-              <Repeat2 className="h-3.5 w-3.5" />
-              Swap: {compactSubstitution(exercise.substitution)}
-            </span>
-            {exercise.safetyNote ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                {compactSafety(exercise.safetyNote)}
-              </span>
-            ) : null}
-          </div>
+          <details open={advanced} className="group mt-3 rounded-xl border border-white/10 bg-black/20">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-muted-foreground transition hover:text-white">
+              Details
+              <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
+            </summary>
+            <div className="space-y-3 border-t border-white/10 p-3">
+              {insights.length ? <ExercisePills pills={insights} /> : null}
+
+              {exercise.supersetWith ? (
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                  <Link2 className="h-3.5 w-3.5 text-accent" />
+                  Superset: {exercise.supersetWith}
+                </div>
+              ) : null}
+
+              <div className="grid gap-2 text-xs sm:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-white/[0.035] p-2">
+                  <div className="text-muted-foreground">Efficiency</div>
+                  <div className="mt-1 font-semibold text-white">{exercise.stimulusToFatigue ?? "--"}</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.035] p-2">
+                  <div className="text-muted-foreground">Fatigue</div>
+                  <div className="mt-1 font-semibold text-white">{exercise.fatigueScore ?? "--"}/5</div>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/[0.035] p-2">
+                  <div className="text-muted-foreground">Tempo</div>
+                  <div className="mt-1 font-semibold text-white">{exercise.tempo ?? "Controlled"}</div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent">
+                  <Repeat2 className="h-3.5 w-3.5" />
+                  Swap: {compactSubstitution(exercise.substitution)}
+                </span>
+                {exercise.safetyNote ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    {compactSafety(exercise.safetyNote)}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </details>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { clamp, toTitleCase } from "@/lib/utils";
+import { clamp, createId, toTitleCase } from "@/lib/utils";
 import type {
   BodyFocus,
   DailyCheckIn,
@@ -1029,7 +1029,7 @@ export function generateAdaptiveWorkout(
   );
 
   return {
-    id: crypto.randomUUID(),
+    id: createId("workout"),
     name: workoutName(mode, dose, focus),
     duration: normalizedInput.timeAvailable,
     focus,

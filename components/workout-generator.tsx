@@ -10,12 +10,13 @@ import {
   MapPin,
   RotateCcw,
   ShieldAlert,
+  SlidersHorizontal,
   WandSparkles
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { generateAdaptiveWorkoutAction, saveWorkoutAction } from "@/app/app-actions";
-import { WorkoutCard } from "@/components/workout-card";
+import { WorkoutCard, type WorkoutViewMode } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -286,6 +287,7 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
   const [input, setInput] = useState<DailyCheckIn>(defaultInput);
   const [workout, setWorkout] = useState<GeneratedWorkout>(() => generateWorkout(defaultInput, engineContext));
   const [message, setMessage] = useState("Generated from a balanced default day. Adjust signals when life changes.");
+  const [viewMode, setViewMode] = useState<WorkoutViewMode>("simple");
   const [isPending, startTransition] = useTransition();
 
   const fitScore = useMemo(() => {
@@ -577,7 +579,40 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
         </Card>
       </section>
 
-      <WorkoutCard workout={workout} onSave={save} saving={isPending} message={message} />
+      <section className="space-y-4">
+        <Card className="border-white/10 bg-white/[0.035]">
+          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white/[0.06] text-primary">
+                <SlidersHorizontal className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-white">Workout view</p>
+                <p className="text-xs text-muted-foreground">
+                  Simple is the clean coaching view. Advanced opens the engine details.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-black/20 p-1">
+              {(["simple", "advanced"] as WorkoutViewMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
+                  className={cn(
+                    "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                    viewMode === mode ? "bg-primary text-primary-foreground shadow-green" : "text-muted-foreground hover:text-white"
+                  )}
+                >
+                  {mode === "simple" ? "Simple" : "Advanced"}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <WorkoutCard workout={workout} onSave={save} saving={isPending} message={message} viewMode={viewMode} />
+      </section>
     </div>
   );
 }

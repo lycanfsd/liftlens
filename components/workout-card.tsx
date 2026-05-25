@@ -1,15 +1,19 @@
 import {
   BarChart3,
   CheckCircle2,
+  ChevronDown,
   Clock,
-  Flame,
   Gauge,
   ListChecks,
+  PlayCircle,
+  Repeat2,
   ShieldCheck,
   Sparkles,
   Target,
   TimerReset
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { ExerciseCard } from "@/components/exercise-card";
 import { Badge } from "@/components/ui/badge";
@@ -18,30 +22,53 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { GeneratedWorkout, InputImpact } from "@/lib/types";
 import { toTitleCase } from "@/lib/utils";
 
+export type WorkoutViewMode = "simple" | "advanced";
+
 type CoachPill = {
   label: string;
   tone?: "positive" | "neutral" | "caution" | "accent";
+};
+
+type PlanSignal = {
+  label: string;
+  value: string;
+  tone: "positive" | "neutral" | "caution" | "accent";
+  priority: number;
 };
 
 function intensityCopy(intensity: GeneratedWorkout["intensity"]) {
   if (intensity === "restore") {
     return {
       title: "Recovery-biased dose",
-      copy: "Clean reps, lower fatigue, no max-effort work."
+      copy: "Lower fatigue today. Quality over load."
     };
   }
 
   if (intensity === "push") {
     return {
       title: "Push window",
-      copy: "Hard work is available. Progress only inside the RIR target."
+      copy: "Use the first lifts for progress. Stop before reps grind."
     };
   }
 
   return {
     title: "Productive dose",
-    copy: "Enough stimulus to progress without overbuilding the session."
+    copy: "Train hard enough to move forward. Keep the session clean."
   };
+}
+
+function intensityLabel(workout: GeneratedWorkout) {
+  if (workout.trainingDose === "deload") return "Recovery";
+  if (workout.trainingDose === "low" || workout.intensity === "restore") return "Light";
+  if (workout.trainingDose === "high" || workout.intensity === "push") return "Hard";
+  return "Moderate";
+}
+
+function intensityTone(workout: GeneratedWorkout): CoachPill["tone"] {
+  const label = intensityLabel(workout);
+  if (label === "Hard") return "positive";
+  if (label === "Light" || label === "Recovery") return "caution";
+  return "accent";
 }
 
 function pillTone(tone: CoachPill["tone"] = "neutral") {
@@ -49,66 +76,6 @@ function pillTone(tone: CoachPill["tone"] = "neutral") {
   if (tone === "caution") return "border-amber-300/20 bg-amber-300/10 text-amber-100";
   if (tone === "accent") return "border-accent/25 bg-accent/10 text-accent";
   return "border-white/10 bg-white/[0.045] text-muted-foreground";
-}
-
-function compactImpact(impact: InputImpact) {
-  const signal = impact.signal.toLowerCase();
-  const text = `${impact.value} ${impact.effect}`.toLowerCase();
-
-  if (signal.includes("energy")) {
-    if (text.includes("reduced")) return "Reduced systemic fatigue";
-    if (text.includes("progression")) return "Progression available";
-    return "RIR guardrails";
-  }
-
-  if (signal.includes("sleep")) {
-    if (text.includes("reduced")) return "Lower intensity";
-    if (text.includes("normal intensity")) return "Normal intensity";
-    return "No max effort";
-  }
-
-  if (signal.includes("stress")) {
-    if (text.includes("trimmed")) return "Simpler setup";
-    if (text.includes("progression")) return "Normal complexity";
-    return "Low chaos dose";
-  }
-
-  if (signal.includes("soreness")) {
-    if (text.includes("reduced") || text.includes("avoided")) return "Direct volume capped";
-    return "No soreness cap";
-  }
-
-  if (signal.includes("time")) {
-    if (text.includes("express")) return "Express dose";
-    if (text.includes("supersets")) return "Supersets enabled";
-    if (text.includes("full")) return "Accessories allowed";
-    return "Standard session";
-  }
-
-  if (signal.includes("crowding")) {
-    if (text.includes("reduced")) return "Low-wait setup";
-    return "Normal equipment";
-  }
-
-  if (signal.includes("weak")) {
-    if (text.includes("earlier")) return "Weak point priority";
-    return "Base priority";
-  }
-
-  if (signal.includes("missed")) {
-    if (!text.includes("none") && !text.includes("normal")) return "Re-entry dose";
-    return "Normal weekly flow";
-  }
-
-  if (signal.includes("performance")) {
-    if (text.includes("paused")) return "Overload paused";
-    if (text.includes("allowed")) return "Overload available";
-    return "Conservative progression";
-  }
-
-  if (signal.includes("dose")) return `${toTitleCase(impact.value)} dose`;
-
-  return impact.effect.replace(/\.$/, "");
 }
 
 function uniquePills(pills: CoachPill[]) {
@@ -121,30 +88,195 @@ function uniquePills(pills: CoachPill[]) {
   });
 }
 
-function coachInsightPills(workout: GeneratedWorkout): CoachPill[] {
-  const readinessTone =
-    workout.readinessLabel === "high" ? "positive" : workout.readinessLabel === "low" ? "caution" : "neutral";
-  const volume = workout.volumeMultiplier ? Math.round(workout.volumeMultiplier * 100) : null;
-  const priorities = (workout.prioritizedMuscleGroups ?? [workout.focus])
+function compactImpact(impact: InputImpact) {
+  const signal = impact.signal.toLowerCase();
+  const text = `${impact.value} ${impact.effect}`.toLowerCase();
+
+  if (signal.includes("energy")) {
+    if (text.includes("reduced")) return "reduced fatigue";
+    if (text.includes("progression")) return "harder first sets";
+    return "steady effort";
+  }
+
+  if (signal.includes("sleep")) {
+    if (text.includes("reduced")) return "intensity reduced";
+    if (text.includes("normal intensity")) return "normal intensity";
+    return "no max effort";
+  }
+
+  if (signal.includes("stress")) {
+    if (text.includes("trimmed")) return "simpler setup";
+    if (text.includes("progression")) return "normal complexity";
+    return "lower chaos";
+  }
+
+  if (signal.includes("soreness")) {
+    if (text.includes("reduced") || text.includes("avoided")) return "direct volume reduced";
+    return "normal volume";
+  }
+
+  if (signal.includes("time")) {
+    if (text.includes("express")) return "shorter session";
+    if (text.includes("supersets")) return "compressed session";
+    if (text.includes("full")) return "accessories added";
+    return "standard session";
+  }
+
+  if (signal.includes("crowding")) {
+    if (text.includes("reduced")) return "easier setup exercises";
+    return "normal equipment";
+  }
+
+  if (signal.includes("weak")) {
+    if (text.includes("earlier")) return "priority work early";
+    return "base priority";
+  }
+
+  if (signal.includes("missed")) {
+    if (!text.includes("none") && !text.includes("normal")) return "realistic re-entry";
+    return "normal weekly flow";
+  }
+
+  if (signal.includes("performance")) {
+    if (text.includes("paused")) return "overload paused";
+    if (text.includes("allowed")) return "progression available";
+    return "conservative progression";
+  }
+
+  if (signal.includes("dose")) return `${toTitleCase(impact.value)} intensity`;
+
+  return impact.effect.replace(/\.$/, "");
+}
+
+function meaningfulSignal(impact: InputImpact): PlanSignal | null {
+  const signal = impact.signal.toLowerCase();
+  const text = `${impact.value} ${impact.effect}`.toLowerCase();
+
+  if (impact.level === "neutral") return null;
+  if (text.includes("no extra") || text.includes("normal weekly flow") || text.includes("normal equipment")) return null;
+  if (signal.includes("training dose")) return null;
+
+  if (signal.includes("energy")) {
+    return {
+      label: impact.value.startsWith("1") || impact.value.startsWith("2") ? "Low energy" : "High energy",
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: impact.level === "caution" ? 5 : 3
+    };
+  }
+
+  if (signal.includes("sleep")) {
+    return {
+      label: impact.value.startsWith("1") || impact.value.startsWith("2") ? "Low sleep" : "Sleep ready",
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: impact.level === "caution" ? 5 : 2
+    };
+  }
+
+  if (signal.includes("stress")) {
+    return {
+      label: impact.value.startsWith("4") || impact.value.startsWith("5") ? "High stress" : "Low stress",
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: impact.level === "caution" ? 4 : 2
+    };
+  }
+
+  if (signal.includes("soreness")) {
+    return {
+      label: `${impact.value} soreness`,
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: 5
+    };
+  }
+
+  if (signal.includes("time")) {
+    if (!text.includes("express") && !text.includes("supersets") && !text.includes("full")) return null;
+    return {
+      label: impact.value,
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: text.includes("express") ? 5 : 4
+    };
+  }
+
+  if (signal.includes("crowding")) {
+    if (!text.includes("reduced")) return null;
+    return {
+      label: `${impact.value} gym`,
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: 4
+    };
+  }
+
+  if (signal.includes("weak")) {
+    if (!text.includes("earlier")) return null;
+    return {
+      label: `${impact.value} focus`,
+      value: compactImpact(impact),
+      tone: "positive",
+      priority: 3
+    };
+  }
+
+  if (signal.includes("missed")) {
+    if (impact.value.toLowerCase() === "none") return null;
+    return {
+      label: "Missed sessions",
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: 4
+    };
+  }
+
+  if (signal.includes("performance")) {
+    return {
+      label: impact.value,
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: impact.level === "caution" ? 4 : 2
+    };
+  }
+
+  return null;
+}
+
+function shapedPlanCards(workout: GeneratedWorkout) {
+  const seen = new Set<string>();
+  return (workout.inputImpacts ?? [])
+    .map(meaningfulSignal)
+    .filter((signal): signal is PlanSignal => Boolean(signal))
+    .sort((a, b) => b.priority - a.priority)
+    .filter((signal) => {
+      const key = `${signal.label}-${signal.value}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5) as PlanSignal[];
+}
+
+function mainFocus(workout: GeneratedWorkout) {
+  return (workout.prioritizedMuscleGroups ?? [workout.focus])
     .slice(0, 2)
     .map((item) => toTitleCase(String(item)))
     .join(" + ");
+}
 
-  return uniquePills([
-    workout.readinessScore ? { label: `Readiness ${workout.readinessScore}`, tone: readinessTone } : null,
-    workout.trainingDose ? { label: `${toTitleCase(workout.trainingDose)} dose`, tone: readinessTone } : null,
-    workout.strategy ? { label: workout.strategy, tone: workout.strategy === "Weak-point priority day" ? "positive" : "accent" } : null,
-    priorities ? { label: `${priorities} priority`, tone: "positive" } : null,
-    volume && volume !== 100
-      ? { label: volume < 100 ? `Volume ${volume}%` : `Volume ${volume}%`, tone: volume < 100 ? "caution" : "positive" }
-      : null,
-    workout.targetRir ? { label: `RIR ${workout.targetRir}`, tone: "neutral" } : null,
-    ...(workout.inputImpacts ?? []).map((impact) => ({
-      label: `${impact.signal}: ${compactImpact(impact)}`,
-      tone: impact.level
-    })),
-    workout.aiSummary ? { label: workout.aiSummary.source === "openai" ? "AI-polished read" : "Rule-based read", tone: "accent" } : null
-  ].filter(Boolean) as CoachPill[]);
+function coachNote(workout: GeneratedWorkout) {
+  const strategy = intensityCopy(workout.intensity);
+  const input = workout.inputSnapshot;
+
+  if (workout.deload?.active) return "Back off volume. Leave feeling better than you arrived.";
+  if (input?.injuryAreas?.length) return "Use pain-free ranges only. Swap anything that changes your mechanics.";
+  if (input?.crowding === "packed") return "Keep setup simple. Skip waits.";
+  if (input?.timeAvailable !== undefined && input.timeAvailable < 30) return "Hit the highest-value work first.";
+  if ((workout.readinessScore ?? 70) < 55) return "Lower fatigue today. Build the streak.";
+  if ((workout.readinessScore ?? 70) >= 78) return "Progress is available if reps stay crisp.";
+  return strategy.copy;
 }
 
 function adjustmentDetails(workout: GeneratedWorkout): CoachPill[] {
@@ -164,18 +296,18 @@ function adjustmentDetails(workout: GeneratedWorkout): CoachPill[] {
   }
 
   return uniquePills([
-    significantDose ? { label: `Dose adjusted: ${volume}% volume`, tone: volume < 100 ? "caution" : "positive" } : null,
-    workout.trainingDose === "deload" ? { label: "Deload rules active", tone: "caution" } : null,
+    significantDose ? { label: `Volume ${volume}%`, tone: volume < 100 ? "caution" : "positive" } : null,
+    workout.trainingDose === "deload" ? { label: "Recovery adjustment active", tone: "caution" } : null,
     input?.timeAvailable !== undefined && input.timeAvailable < 30 ? { label: "Highest-value lifts only", tone: "caution" } : null,
     input?.timeAvailable !== undefined && input.timeAvailable >= 30 && input.timeAvailable < 45
-      ? { label: "Compressed with supersets", tone: "caution" }
+      ? { label: "Supersets enabled", tone: "caution" }
       : null,
     input?.crowding === "packed" ? { label: "Rack dependence reduced", tone: "caution" } : null,
-    injuries.length ? { label: `Limitations: ${injuries.map(toTitleCase).join(", ")}`, tone: "caution" } : null,
+    injuries.length ? { label: `Protected: ${injuries.map(toTitleCase).join(", ")}`, tone: "caution" } : null,
     workout.explanation?.whatToAvoid.some((item) => item.toLowerCase().includes("sore"))
       ? { label: "Sore muscle volume capped", tone: "caution" }
       : null,
-    input?.missedWorkouts && input.missedWorkouts !== "none" ? { label: "Catch-up without punishment volume", tone: "caution" } : null
+    input?.missedWorkouts && input.missedWorkouts !== "none" ? { label: "No punishment volume", tone: "caution" } : null
   ].filter(Boolean) as CoachPill[]);
 }
 
@@ -201,11 +333,18 @@ function guardrailPills(workout: GeneratedWorkout): CoachPill[] {
   const source = [...(workout.notes ?? []), ...(workout.explanation?.safety ?? [])].join(" ").toLowerCase();
   return uniquePills([
     { label: "No daily max effort", tone: "neutral" },
-    workout.targetRir ? { label: `Stop at RIR ${workout.targetRir}`, tone: "neutral" } : null,
+    workout.targetRir ? { label: `Leave ${workout.targetRir} reps in reserve`, tone: "neutral" } : null,
     source.includes("pain-free") || source.includes("injury") ? { label: "Pain-free range only", tone: "caution" } : null,
-    source.includes("superset") ? { label: "Superset only if quality holds", tone: "accent" } : null,
+    source.includes("superset") ? { label: "Quality before speed", tone: "accent" } : null,
     { label: "Not medical advice", tone: "neutral" }
   ].filter(Boolean) as CoachPill[]);
+}
+
+function compactSubstitution(substitution: string) {
+  return substitution
+    .replace(/\s+if equipment or comfort changes\.$/, "")
+    .replace(/\s+if waiting would break flow\.$/, "")
+    .replace(/\.$/, "");
 }
 
 function CoachPills({ pills }: { pills: CoachPill[] }) {
@@ -223,265 +362,313 @@ function CoachPills({ pills }: { pills: CoachPill[] }) {
   );
 }
 
+function DetailSection({
+  title,
+  icon: Icon,
+  children,
+  defaultOpen = false
+}: {
+  title: string;
+  icon: LucideIcon;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details open={defaultOpen} className="group rounded-2xl border border-white/10 bg-white/[0.035]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.035]">
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-primary" />
+          {title}
+        </span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground transition group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-white/10 p-4">{children}</div>
+    </details>
+  );
+}
+
 export function WorkoutCard({
   workout,
   onSave,
   saveLabel = "Save as completed",
   saving = false,
-  message
+  message,
+  viewMode = "simple"
 }: {
   workout: GeneratedWorkout;
   onSave?: () => void;
   saveLabel?: string;
   saving?: boolean;
   message?: string;
+  viewMode?: WorkoutViewMode;
 }) {
-  const strategy = intensityCopy(workout.intensity);
-  const showDebug = process.env.NODE_ENV !== "production" && workout.debug;
-  const insights = coachInsightPills(workout);
+  const advanced = viewMode === "advanced";
+  const planCards = shapedPlanCards(workout);
   const details = adjustmentDetails(workout);
   const logic = trainingLogicPills(workout);
   const guardrails = guardrailPills(workout);
+  const showDebug = process.env.NODE_ENV !== "production" && workout.debug;
 
   return (
-    <Card className="overflow-hidden border-primary/25 bg-gradient-to-b from-white/[0.08] to-white/[0.035]">
+    <Card className="overflow-hidden border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.03]">
       <CardContent className="p-0">
-        <section className="border-b border-white/10 p-5 sm:p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="border-primary/25 bg-primary/10 text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              Adaptive plan
-            </Badge>
-            <Badge>{toTitleCase(workout.intensity)}</Badge>
-            {workout.trainingDose ? <Badge>Dose: {toTitleCase(workout.trainingDose)}</Badge> : null}
-            {workout.strategy ? <Badge>{workout.strategy}</Badge> : null}
-            <Badge>{toTitleCase(workout.focus)}</Badge>
-            {workout.trainingGoal ? <Badge>{toTitleCase(workout.trainingGoal)}</Badge> : null}
-          </div>
+        <section className="border-b border-white/10 p-5 sm:p-7">
+          <Badge className="border-primary/20 bg-primary/10 text-primary">
+            <Sparkles className="h-3.5 w-3.5" />
+            Today&apos;s plan
+          </Badge>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_260px]">
+          <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_260px]">
             <div>
-              <p className="text-sm font-semibold text-primary">{strategy.title}</p>
-              <h2 className="mt-2 text-3xl font-semibold text-white sm:text-4xl">{workout.name}</h2>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{strategy.copy}</p>
-              {workout.aiSummary ? (
-                <div className="mt-4">
-                  <CoachPills
-                    pills={[
-                      {
-                        label: workout.aiSummary.source === "openai" ? "Coach language refined" : "Deterministic coaching active",
-                        tone: "accent"
-                      }
-                    ]}
-                  />
-                </div>
-              ) : null}
+              <p className="text-sm font-semibold text-primary">{intensityCopy(workout.intensity).title}</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-normal text-white sm:text-4xl">{workout.name}</h2>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{coachNote(workout)}</p>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Button asChild size="lg" className="w-full sm:w-auto">
+                  <a href="#workout-main">
+                    <PlayCircle className="h-4 w-4" />
+                    Start workout
+                  </a>
+                </Button>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {workout.exercises.length} exercises - leave {workout.targetRir ?? 2} reps in reserve
+                </span>
+              </div>
             </div>
+
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4 text-accent" />
-                  Duration
+                  Time
                 </div>
                 <p className="mt-2 text-2xl font-semibold text-white">{workout.duration} min</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Flame className="h-4 w-4 text-primary" />
-                  Training block
+                  <Gauge className="h-4 w-4 text-primary" />
+                  Today&apos;s intensity
                 </div>
-                <p className="mt-2 text-2xl font-semibold text-white">{workout.exercises.length} moves</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{intensityLabel(workout)}</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Gauge className="h-4 w-4 text-accent" />
+                  <Target className="h-4 w-4 text-accent" />
+                  Focus
+                </div>
+                <p className="mt-2 text-xl font-semibold text-white">{mainFocus(workout)}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <BarChart3 className="h-4 w-4 text-primary" />
                   Readiness
                 </div>
                 <p className="mt-2 text-2xl font-semibold text-white">{workout.readinessScore ?? "--"}/100</p>
-                <p className="mt-1 text-xs text-muted-foreground">{workout.readinessLabel ?? "adaptive"}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <BarChart3 className="h-4 w-4 text-primary" />
-                  Dose
-                </div>
-                <p className="mt-2 text-2xl font-semibold text-white">{toTitleCase(workout.trainingDose ?? "steady")}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  RIR {workout.targetRir ?? 2} / RPE {workout.targetRpe ?? 8}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Target className="h-4 w-4 text-accent" />
-                  Priority
-                </div>
-                <p className="mt-2 text-xl font-semibold text-white">
-                  {(workout.prioritizedMuscleGroups ?? [workout.focus])
-                    .slice(0, 2)
-                    .map((item) => toTitleCase(String(item)))
-                    .join(" + ")}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {workout.volumeMultiplier ? `${Math.round(workout.volumeMultiplier * 100)}% volume` : "adaptive volume"}
-                </p>
               </div>
             </div>
           </div>
         </section>
 
-        {insights.length ? (
+        {planCards.length ? (
           <section className="border-b border-white/10 p-5 sm:p-6">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-end justify-between gap-4">
               <div>
-                <h3 className="flex items-center gap-2 font-semibold text-white">
-                  <Gauge className="h-4 w-4 text-primary" />
-                  Coach insights
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">Fast signals. No lecture.</p>
+                <h3 className="font-semibold text-white">What shaped today&apos;s plan</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Only the signals that changed the workout.</p>
               </div>
+              <Badge className={pillTone(intensityTone(workout))}>{intensityLabel(workout)}</Badge>
             </div>
-            <div className="mt-4">
-              <CoachPills pills={insights} />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {planCards.map((card) => (
+                <div key={`${card.label}-${card.value}`} className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{card.label}</p>
+                  <p className="mt-2 text-sm font-semibold text-white">{card.value}</p>
+                </div>
+              ))}
             </div>
           </section>
         ) : null}
 
-        <section className="grid gap-4 p-5 sm:p-6 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <h3 className="flex items-center gap-2 font-semibold text-white">
-                <ListChecks className="h-4 w-4 text-primary" />
-                Warmup
-              </h3>
-              <div className="mt-4 space-y-2">
-                {workout.warmup.map((item, index) => (
-                  <div key={item} className="flex gap-3 rounded-xl bg-black/25 px-3 py-2 text-sm text-muted-foreground">
-                    <span className="font-semibold text-white">{index + 1}</span>
-                    {item}
-                  </div>
-                ))}
-              </div>
+        <section id="workout-main" className="p-5 sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Main work</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Follow the order. The first lifts matter most.</p>
             </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <h3 className="flex items-center gap-2 font-semibold text-white">
-                <TimerReset className="h-4 w-4 text-accent" />
-                Express fallback
-              </h3>
-              <div className="mt-4 space-y-2">
-                {workout.condensed.map((step) => (
-                  <div key={step} className="rounded-xl bg-black/25 px-3 py-2 text-sm text-muted-foreground">
-                    {step}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {workout.cooldown?.length ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <h3 className="flex items-center gap-2 font-semibold text-white">
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  Cooldown
-                </h3>
-                <div className="mt-4 space-y-2">
-                  {workout.cooldown.map((item, index) => (
-                    <div key={item} className="flex gap-3 rounded-xl bg-black/25 px-3 py-2 text-sm text-muted-foreground">
-                      <span className="font-semibold text-white">{index + 1}</span>
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {logic.length ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <h3 className="flex items-center gap-2 font-semibold text-white">
-                  <BarChart3 className="h-4 w-4 text-primary" />
-                  Training logic
-                </h3>
-                <div className="mt-4">
-                  <CoachPills pills={logic} />
-                </div>
-              </div>
-            ) : null}
+            <Badge>{workout.exercises.length} moves</Badge>
           </div>
-
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <h3 className="px-2 py-2 font-semibold text-white">Main work</h3>
-            <div className="space-y-3">
-              {workout.exercises.map((exercise, index) => (
-                <ExerciseCard key={`${exercise.name}-${index}`} exercise={exercise} index={index} />
-              ))}
-            </div>
+          <div className="space-y-3">
+            {workout.exercises.map((exercise, index) => (
+              <ExerciseCard key={`${exercise.name}-${index}`} exercise={exercise} index={index} advanced={advanced} />
+            ))}
           </div>
         </section>
 
         <section className="border-t border-white/10 p-5 sm:p-6">
-          {details.length ? (
-            <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <h3 className="flex items-center gap-2 font-semibold text-white">
-                <Sparkles className="h-4 w-4 text-accent" />
-                Adjustments applied
-              </h3>
-              <div className="mt-4">
-                <CoachPills pills={details} />
+          <div className="grid gap-3">
+            <DetailSection title="Warmup and cooldown" icon={ListChecks} defaultOpen={advanced}>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-white">Warmup</h4>
+                  <div className="mt-3 space-y-2">
+                    {workout.warmup.map((item, index) => (
+                      <div key={item} className="flex gap-3 rounded-xl bg-black/25 px-3 py-2 text-sm text-muted-foreground">
+                        <span className="font-semibold text-white">{index + 1}</span>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {workout.cooldown?.length ? (
+                  <div>
+                    <h4 className="text-sm font-semibold text-white">Cooldown</h4>
+                    <div className="mt-3 space-y-2">
+                      {workout.cooldown.map((item, index) => (
+                        <div key={item} className="flex gap-3 rounded-xl bg-black/25 px-3 py-2 text-sm text-muted-foreground">
+                          <span className="font-semibold text-white">{index + 1}</span>
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : null}
+            </DetailSection>
 
-          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <h3 className="font-semibold text-white">Coach guardrails</h3>
-              <div className="mt-4">
+            <DetailSection title="Why this workout?" icon={Sparkles} defaultOpen={advanced}>
+              <div className="space-y-4">
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {workout.explanation?.whyThisWorkout ?? workout.todayStrategy ?? intensityCopy(workout.intensity).copy}
+                </p>
+                {details.length ? <CoachPills pills={details} /> : null}
+              </div>
+            </DetailSection>
+
+            <DetailSection title="What changed from your inputs?" icon={Gauge} defaultOpen={advanced}>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(workout.inputImpacts ?? []).map((impact) => (
+                  <div key={impact.signal} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <p className="text-sm font-semibold text-white">
+                      {impact.signal}: <span className="text-muted-foreground">{impact.value}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{compactImpact(impact)}</p>
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
+
+            <DetailSection title="Advanced exercise metrics" icon={BarChart3} defaultOpen={advanced}>
+              <div className="grid gap-2">
+                {workout.exercises.map((exercise) => (
+                  <div key={exercise.name} className="grid gap-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs sm:grid-cols-4">
+                    <p className="font-semibold text-white sm:col-span-1">{exercise.name}</p>
+                    <p className="text-muted-foreground">
+                      Efficiency: <span className="font-semibold text-white">{exercise.stimulusToFatigue ?? "--"}</span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      Fatigue: <span className="font-semibold text-white">{exercise.fatigueScore ?? "--"}/5</span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      Tempo: <span className="font-semibold text-white">{exercise.tempo ?? "Controlled"}</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
+
+            <DetailSection title="Substitutions" icon={Repeat2} defaultOpen={advanced}>
+              <div className="grid gap-2">
+                {workout.exercises.map((exercise) => (
+                  <div key={exercise.name} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <p className="text-sm font-semibold text-white">{exercise.name}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Swap: {compactSubstitution(exercise.substitution)}</p>
+                    {exercise.safetyNote ? <p className="mt-2 text-xs text-amber-100">{exercise.safetyNote}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </DetailSection>
+
+            <DetailSection title="Recovery notes" icon={ShieldCheck} defaultOpen={advanced}>
+              <div className="space-y-4">
                 <CoachPills pills={guardrails} />
+                {workout.explanation?.whatToAvoid.length ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {workout.explanation.whatToAvoid.map((item) => (
+                      <p key={item} className="rounded-xl bg-black/25 p-3 text-sm leading-6 text-muted-foreground">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            </div>
+            </DetailSection>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <h3 className="flex items-center gap-2 font-semibold text-white">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                Completion standard
-              </h3>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">Clean reps. Log one note. Leave while quality is high.</p>
+            <DetailSection title="Programming logic" icon={TimerReset} defaultOpen={advanced}>
+              <div className="space-y-4">
+                {logic.length ? <CoachPills pills={logic} /> : null}
+                {workout.progression ? (
+                  <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                    <p className="rounded-xl bg-black/25 p-3">{workout.progression.estimatedOneRepMax}</p>
+                    <p className="rounded-xl bg-black/25 p-3">{workout.progression.weeklyVolume}</p>
+                  </div>
+                ) : null}
+                {workout.explanation?.progressNextTime ? (
+                  <p className="rounded-xl bg-black/25 p-3 text-sm text-muted-foreground">{workout.explanation.progressNextTime}</p>
+                ) : null}
+
+                {showDebug ? (
+                  <details className="rounded-xl border border-accent/20 bg-accent/10 p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-accent">Development decision trace</summary>
+                    <div className="mt-3 grid gap-3 text-xs leading-5 text-muted-foreground lg:grid-cols-2">
+                      <div className="rounded-xl bg-black/25 p-3">
+                        <p className="font-semibold text-white">Readiness breakdown</p>
+                        {workout.debug?.readinessCalculation.map((line) => <p key={line}>{line}</p>)}
+                      </div>
+                      <div className="rounded-xl bg-black/25 p-3">
+                        <p className="font-semibold text-white">Recovery adjustment</p>
+                        <p>{Math.round((workout.debug?.volumeMultiplier ?? 1) * 100)}% volume</p>
+                        <p className="mt-2 font-semibold text-white">Priorities</p>
+                        <p>{workout.debug?.selectedPriorities.join(", ") || "None"}</p>
+                      </div>
+                      <div className="rounded-xl bg-black/25 p-3">
+                        <p className="font-semibold text-white">Substitution trace</p>
+                        {(workout.debug?.exerciseSubstitutions.length ? workout.debug.exerciseSubstitutions : ["No forced substitutions."]).map(
+                          (line) => <p key={line}>{line}</p>
+                        )}
+                      </div>
+                      <div className="rounded-xl bg-black/25 p-3">
+                        <p className="font-semibold text-white">Avoided exercises</p>
+                        {(workout.debug?.avoidedExercises.length ? workout.debug.avoidedExercises : ["No exclusions triggered."]).map(
+                          (line) => (
+                            <p key={line}>{line}</p>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </details>
+                ) : null}
+              </div>
+            </DetailSection>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="grid gap-4 lg:grid-cols-[1fr_260px] lg:items-center">
+              <div>
+                <h3 className="flex items-center gap-2 font-semibold text-white">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  Completion standard
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Clean reps. One note. Stop while quality is high.</p>
+                {message ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p> : null}
+              </div>
               {onSave ? (
-                <Button onClick={onSave} disabled={saving} className="mt-4 w-full">
+                <Button onClick={onSave} disabled={saving} className="w-full">
                   {saving ? "Saving..." : saveLabel}
                 </Button>
               ) : null}
-              {message ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{message}</p> : null}
             </div>
           </div>
-
-          {showDebug ? (
-            <details className="mt-4 rounded-2xl border border-accent/20 bg-accent/10 p-4">
-              <summary className="cursor-pointer text-sm font-semibold text-accent">Development debug: engine decision trace</summary>
-              <div className="mt-4 grid gap-3 text-xs leading-5 text-muted-foreground lg:grid-cols-2">
-                <div className="rounded-xl bg-black/25 p-3">
-                  <p className="font-semibold text-white">Readiness calculation</p>
-                  {workout.debug?.readinessCalculation.map((line) => <p key={line}>{line}</p>)}
-                </div>
-                <div className="rounded-xl bg-black/25 p-3">
-                  <p className="font-semibold text-white">Volume multiplier</p>
-                  <p>{Math.round((workout.debug?.volumeMultiplier ?? 1) * 100)}%</p>
-                  <p className="mt-2 font-semibold text-white">Selected priorities</p>
-                  <p>{workout.debug?.selectedPriorities.join(", ") || "None"}</p>
-                </div>
-                <div className="rounded-xl bg-black/25 p-3">
-                  <p className="font-semibold text-white">Substitutions</p>
-                  {(workout.debug?.exerciseSubstitutions.length ? workout.debug.exerciseSubstitutions : ["No forced substitutions."]).map(
-                    (line) => <p key={line}>{line}</p>
-                  )}
-                </div>
-                <div className="rounded-xl bg-black/25 p-3">
-                  <p className="font-semibold text-white">Avoided exercises</p>
-                  {(workout.debug?.avoidedExercises.length ? workout.debug.avoidedExercises : ["No exclusions triggered."]).map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
-                </div>
-              </div>
-            </details>
-          ) : null}
         </section>
       </CardContent>
     </Card>

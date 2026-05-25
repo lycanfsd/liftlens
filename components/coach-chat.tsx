@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingState } from "@/components/loading-state";
 import { getMockCoachReply } from "@/lib/workout/coach";
-import { cn } from "@/lib/utils";
+import { cn, createId } from "@/lib/utils";
 
 type Message = {
   id: string;
@@ -37,7 +37,7 @@ export function CoachChat() {
 
   function askCoach(content: string) {
     if (!content.trim()) return;
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content };
+    const userMessage: Message = { id: createId("message"), role: "user", content };
     setMessages((current) => [...current, userMessage]);
     setInput("");
 
@@ -51,12 +51,12 @@ export function CoachChat() {
         const data = (await response.json()) as { reply?: string };
         setMessages((current) => [
           ...current,
-          { id: crypto.randomUUID(), role: "coach", content: data.reply ?? getMockCoachReply(content) }
+          { id: createId("message"), role: "coach", content: data.reply ?? getMockCoachReply(content) }
         ]);
       } catch {
         setMessages((current) => [
           ...current,
-          { id: crypto.randomUUID(), role: "coach", content: getMockCoachReply(content) }
+          { id: createId("message"), role: "coach", content: getMockCoachReply(content) }
         ]);
       }
     });
