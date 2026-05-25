@@ -76,6 +76,7 @@ export type StrategyType =
   | "Maintenance day"
   | "Recovery-biased day"
   | "Deload day"
+  | "Momentum protection day"
   | "Weak-point priority day"
   | "Express session";
 

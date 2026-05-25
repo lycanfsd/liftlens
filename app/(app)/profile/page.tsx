@@ -1,4 +1,4 @@
-import { CalendarDays, Flame, Mail, ShieldCheck, Trophy, UserRound } from "lucide-react";
+import { Activity, CalendarDays, Mail, ShieldCheck, Trophy, UserRound } from "lucide-react";
 
 import { logoutAction } from "@/app/auth/actions";
 import { AvatarUploader } from "@/components/avatar-uploader";
@@ -20,7 +20,6 @@ type ProfilePageData = {
   formValues: ProfileFormValues;
   snapshot: {
     completedWorkouts: number;
-    currentStreak: number;
     mostTrainedFocus: string;
     consistency: number;
     weeklySessions: number;
@@ -31,21 +30,6 @@ type WorkoutLogRow = {
   completed_at: string;
   focus: string | null;
 };
-
-function calculateStreak(days: string[]) {
-  const uniqueDays = new Set(days);
-  let streak = 0;
-  const cursor = new Date();
-
-  for (let index = 0; index < 30; index += 1) {
-    const key = cursor.toISOString().slice(0, 10);
-    if (!uniqueDays.has(key)) break;
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
-}
 
 function formatDate(value: string | null) {
   if (!value) return "Available after signup";
@@ -77,13 +61,11 @@ function getMostTrainedFocus(rows: WorkoutLogRow[]) {
 
 function buildSnapshot(rows: WorkoutLogRow[], weeklyTrainingDays: number | "") {
   const now = Date.now();
-  const days = rows.map((row) => row.completed_at.slice(0, 10));
   const weeklyTarget = typeof weeklyTrainingDays === "number" ? weeklyTrainingDays : 4;
   const weekRows = rows.filter((row) => now - new Date(row.completed_at).getTime() <= 7 * 86400000);
 
   return {
     completedWorkouts: rows.length,
-    currentStreak: calculateStreak(days),
     mostTrainedFocus: getMostTrainedFocus(rows),
     consistency: Math.min(100, Math.round((weekRows.length / weeklyTarget) * 100)),
     weeklySessions: weekRows.length
@@ -117,7 +99,6 @@ async function getProfilePageData(): Promise<ProfilePageData> {
       formValues,
       snapshot: {
         completedWorkouts: 8,
-        currentStreak: 3,
         mostTrainedFocus: "Upper",
         consistency: 86,
         weeklySessions: 3
@@ -281,10 +262,10 @@ export default async function ProfilePage() {
                 accent="green"
               />
               <StatCard
-                label="Current streak"
-                value={`${data.snapshot.currentStreak} days`}
-                detail="Consecutive training days"
-                icon={Flame}
+                label="Training rhythm"
+                value={`${data.snapshot.weeklySessions} this week`}
+                detail="Current momentum signal"
+                icon={Activity}
                 accent="blue"
               />
               <StatCard

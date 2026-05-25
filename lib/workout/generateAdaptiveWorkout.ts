@@ -1,4 +1,5 @@
 import { clamp, createId, toTitleCase } from "@/lib/utils";
+import type { MomentumState } from "@/lib/momentum";
 import type {
   BodyFocus,
   DailyCheckIn,
@@ -40,6 +41,10 @@ export type WorkoutEngineContext = {
   recoveryTrend: RecoveryTrend;
   recentAdherence: number;
   currentProgramPhase: ProgramPhase;
+  momentumScore: number;
+  momentumState: MomentumState;
+  momentumProtectionMode: boolean;
+  momentumRecoveryMode: boolean;
 };
 
 type ReadinessResult = {
@@ -99,7 +104,11 @@ const defaultContext: WorkoutEngineContext = {
   weeklyVolumeSets: 0,
   recoveryTrend: "stable",
   recentAdherence: 0,
-  currentProgramPhase: "build"
+  currentProgramPhase: "build",
+  momentumScore: 68,
+  momentumState: "Stable",
+  momentumProtectionMode: false,
+  momentumRecoveryMode: false
 };
 
 const goalProfiles: Record<
@@ -264,6 +273,9 @@ function normalizeContext(partialContext: Partial<WorkoutEngineContext> = {}): W
     weeklyTrainingDays: clamp(context.weeklyTrainingDays, 1, 7),
     weakPoints: context.weakPoints ?? [],
     dislikedExercises: context.dislikedExercises ?? [],
+    momentumScore: clamp(context.momentumScore ?? 68, 0, 100),
+    momentumProtectionMode: Boolean(context.momentumProtectionMode),
+    momentumRecoveryMode: Boolean(context.momentumRecoveryMode),
     recentAdherence:
       context.recentAdherence > 0
         ? clamp(context.recentAdherence, 0, 1.4)
@@ -306,6 +318,7 @@ function calculateReadiness(input: DailyCheckIn, context: WorkoutEngineContext):
   const adherenceScore = clamp(context.recentAdherence, 0, 1);
   const performanceScore = trendScore(context);
   const recoveryScore = recoveryTrendScore(context);
+  const momentumScore = clamp(context.momentumScore, 0, 100) / 100;
   const missedPenalty =
     input.missedWorkouts === "1-week-plus" ? 10 : input.missedWorkouts === "2-3-days" ? 6 : input.missedWorkouts === "1-day" ? 2 : 0;
   const injuryPenalty = input.injuryAreas.length > 0 ? 6 : 0;
@@ -318,10 +331,12 @@ function calculateReadiness(input: DailyCheckIn, context: WorkoutEngineContext):
     sorenessScore * 17 +
     performanceScore * 10 +
     adherenceScore * 8 +
-    recoveryScore * 7 -
+    recoveryScore * 7 +
+    momentumScore * 5 -
     missedPenalty -
     injuryPenalty -
-    phasePenalty;
+    phasePenalty -
+    (context.momentumProtectionMode ? 4 : 0);
 
   const score = Math.round(clamp(raw, 18, 96));
   const increasing: string[] = [];
@@ -331,12 +346,14 @@ function calculateReadiness(input: DailyCheckIn, context: WorkoutEngineContext):
   if (input.sleepQuality >= 4) increasing.push("Good sleep allows normal or increased intensity.");
   if (input.stressLevel <= 2) increasing.push("Low stress keeps exercise complexity available.");
   if (context.performanceTrend === "improving") increasing.push("Recent performance trend supports progression.");
+  if (context.momentumState === "High Momentum") increasing.push("Momentum supports normal progression.");
   if (input.energy <= 2) decreasing.push("Low energy lowers volume and removes PR attempts.");
   if (input.sleepQuality <= 2) decreasing.push("Poor sleep increases RIR and lowers intensity.");
   if (input.stressLevel >= 4) decreasing.push("High stress reduces complexity and total work.");
   if (sorenessAverage >= 3.4) decreasing.push("Soreness is elevated, so direct volume is capped.");
   if (context.performanceTrend === "declining") decreasing.push("Declining performance pauses aggressive overload.");
   if (input.injuryAreas.length > 0) decreasing.push("Injury limitations remove high-risk movements.");
+  if (context.momentumProtectionMode) decreasing.push("Momentum Protection Mode trims friction and setup complexity.");
 
   return {
     score,
@@ -350,6 +367,7 @@ function calculateReadiness(input: DailyCheckIn, context: WorkoutEngineContext):
       `Average soreness ${sorenessAverage.toFixed(1)}/5 contributed ${Math.round(sorenessScore * 17)} points.`,
       `Performance trend ${context.performanceTrend} contributed ${Math.round(performanceScore * 10)} points.`,
       `Adherence ${(context.recentAdherence * 100).toFixed(0)}% contributed ${Math.round(adherenceScore * 8)} points.`,
+      `Momentum ${context.momentumScore}/100 adjusted readiness by ${Math.round(momentumScore * 5) - (context.momentumProtectionMode ? 4 : 0)} points.`,
       `Penalties: missed ${missedPenalty}, injuries ${injuryPenalty}, phase ${phasePenalty}.`
     ],
     recommendedStrategy:
@@ -399,6 +417,21 @@ function decideDose(input: DailyCheckIn, context: WorkoutEngineContext, readines
       complexity: "low",
       supersetsEnabled: true,
       doseReason: "Under 30 minutes means highest-value movements only."
+    };
+  }
+
+  if (context.momentumProtectionMode) {
+    return {
+      strategy: "Momentum protection day",
+      trainingDose: readiness.score >= 62 && !context.momentumRecoveryMode ? "moderate" : "low",
+      volumeMultiplier: context.momentumRecoveryMode ? 0.62 : 0.72,
+      exerciseCount: compressedSession ? 4 : 5,
+      targetRir: clamp(profile.targetRir + 1, 2, 5),
+      targetRpe: context.momentumRecoveryMode ? 6 : 7,
+      progressionAggressiveness: "conservative",
+      complexity: "low",
+      supersetsEnabled: compressedSession,
+      doseReason: "Momentum Protection Mode reduced friction to preserve adherence."
     };
   }
 
@@ -897,6 +930,16 @@ function buildInputImpacts(input: DailyCheckIn, context: WorkoutEngineContext, r
       level: context.performanceTrend === "declining" ? "caution" : context.performanceTrend === "improving" ? "positive" : "neutral"
     },
     {
+      signal: "Momentum",
+      value: `${context.momentumScore}/100 ${context.momentumState}`,
+      effect: context.momentumProtectionMode
+        ? "Session shortened, setup simplified, and failure work removed to protect consistency."
+        : context.momentumState === "High Momentum"
+          ? "Normal progression remains available while recovery holds."
+          : "Training dose keeps the trajectory repeatable.",
+      level: context.momentumProtectionMode ? "caution" : context.momentumState === "High Momentum" ? "positive" : "neutral"
+    },
+    {
       signal: "Training dose",
       value: toTitleCase(dose.trainingDose),
       effect: dose.doseReason,
@@ -930,6 +973,7 @@ function adherenceStatus(context: WorkoutEngineContext) {
 
 function workoutName(mode: TrainingGoalMode, dose: DoseDecision, focus: BodyFocus) {
   if (dose.strategy === "Deload day") return "Adaptive Deload Rebuild";
+  if (dose.strategy === "Momentum protection day") return "Momentum Protection Session";
   if (dose.strategy === "Express session") return "Express Physique Dose";
   if (dose.strategy === "Weak-point priority day") return `${toTitleCase(focus)} Weak-Point Builder`;
   if (mode === "athletic-performance") return "Athletic Output Session";
@@ -974,7 +1018,10 @@ function buildExplanation(
       input.timeAvailable < 45 ? "Time limit enabled supersets and reduced exercise count." : "Time available supports a standard exercise count.",
       input.crowding === "packed" ? "Crowding logic lowered rack, bench, and machine dependence." : "Crowding did not require major station swaps.",
       context.performanceTrend === "declining" ? "Progression is conservative because recent performance is declining." : "Progression remains available when RIR targets are hit.",
-      input.missedWorkouts === "none" ? "No missed-day catch-up was needed." : "Missed-workout logic merged priorities without punishment volume."
+      input.missedWorkouts === "none" ? "No missed-day catch-up was needed." : "Missed-workout logic merged priorities without punishment volume.",
+      context.momentumProtectionMode
+        ? "Momentum Protection Mode shortened the plan and reduced setup complexity."
+        : "Momentum is stable enough for the planned structure."
     ],
     todayMainFocus: `Prioritize ${priorities.map(toTitleCase).join(", ")} inside a ${toTitleCase(focus)} structure.`,
     whatToAvoid: avoid.length > 0 ? avoid : ["Avoid changing the goal mid-session. Execute clean reps and leave when the plan is done."],
@@ -1005,10 +1052,21 @@ function buildCondensed(exercises: ExercisePrescription[], dose: DoseDecision) {
 function buildNotes(input: DailyCheckIn, readiness: ReadinessResult, dose: DoseDecision) {
   return [
     readiness.recommendedStrategy,
+    contextMomentumNote(input, dose),
     dose.supersetsEnabled ? "Supersets are enabled because time is limited." : "No forced supersets; use full rest for quality.",
     input.injuryAreas.length > 0 ? "Injury safeguards are active. Pain-free range beats loading today." : "No injury limitation was flagged.",
     "No daily max-effort work is recommended. The plan caps fatigue by RIR and set volume."
   ];
+}
+
+function contextMomentumNote(input: DailyCheckIn, dose: DoseDecision) {
+  if (dose.strategy === "Momentum protection day") {
+    return input.timeAvailable < 45
+      ? "Momentum Protection Mode is active: short, simple, and startable."
+      : "Momentum Protection Mode is active: reduced friction before adherence drops.";
+  }
+
+  return "Momentum is monitored through adherence, recovery, and comeback behavior.";
 }
 
 export function generateAdaptiveWorkout(

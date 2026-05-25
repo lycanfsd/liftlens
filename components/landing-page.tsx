@@ -52,7 +52,7 @@ const features = [
   },
   {
     title: "Progress Dashboard",
-    copy: "Track consistency, streaks, trained muscles, and the energy trend over time.",
+    copy: "Track momentum, trained muscles, recovery balance, and energy trends over time.",
     icon: BarChart3
   }
 ];

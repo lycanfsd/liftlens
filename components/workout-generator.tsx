@@ -100,7 +100,7 @@ const realities: { label: string; copy: string; input: DailyCheckIn }[] = [
   },
   {
     label: "Low battery",
-    copy: "Keep the streak alive",
+    copy: "Protect the rhythm",
     input: withGlobalSoreness(
       { ...defaultInput, timeAvailable: 25, energy: 2, sleepQuality: 2, stressLevel: 4, bodyFocus: "upper" },
       3
@@ -379,6 +379,18 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   Deterministic logic first: goal, recovery, volume, RIR, equipment, and fatigue.
                 </p>
+                {engineContext?.momentumProtectionMode ? (
+                  <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-100">
+                      <ShieldAlert className="h-4 w-4" />
+                      Momentum Protection Mode
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      Recent adherence or recovery friction increased, so today&apos;s workout is built to be shorter,
+                      simpler, and easier to start.
+                    </p>
+                  </div>
+                ) : null}
               </div>
               <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border border-white/10 bg-black/35">
                 <div className="text-center">

@@ -143,6 +143,12 @@ function compactImpact(impact: InputImpact) {
     return "conservative progression";
   }
 
+  if (signal.includes("momentum")) {
+    if (text.includes("shortened")) return "friction reduced";
+    if (text.includes("progression")) return "progression available";
+    return "trajectory maintained";
+  }
+
   if (signal.includes("dose")) return `${toTitleCase(impact.value)} intensity`;
 
   return impact.effect.replace(/\.$/, "");
@@ -241,6 +247,15 @@ function meaningfulSignal(impact: InputImpact): PlanSignal | null {
     };
   }
 
+  if (signal.includes("momentum")) {
+    return {
+      label: impact.value.includes("At Risk") ? "Momentum at risk" : impact.value,
+      value: compactImpact(impact),
+      tone: impact.level,
+      priority: impact.level === "caution" ? 5 : 3
+    };
+  }
+
   return null;
 }
 
@@ -274,7 +289,7 @@ function coachNote(workout: GeneratedWorkout) {
   if (input?.injuryAreas?.length) return "Use pain-free ranges only. Swap anything that changes your mechanics.";
   if (input?.crowding === "packed") return "Keep setup simple. Skip waits.";
   if (input?.timeAvailable !== undefined && input.timeAvailable < 30) return "Hit the highest-value work first.";
-  if ((workout.readinessScore ?? 70) < 55) return "Lower fatigue today. Build the streak.";
+  if ((workout.readinessScore ?? 70) < 55) return "Lower fatigue today. Protect the rhythm.";
   if ((workout.readinessScore ?? 70) >= 78) return "Progress is available if reps stay crisp.";
   return strategy.copy;
 }

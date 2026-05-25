@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { SafetyDisclaimer } from "@/components/safety-disclaimer";
 import { WorkoutGenerator } from "@/components/workout-generator";
+import { calculateMomentumSystem } from "@/lib/momentum";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ExperienceLevel, FitnessGoal, WeakPoint } from "@/lib/types";
@@ -62,7 +63,7 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
       .maybeSingle(),
     supabase
       .from("workout_logs")
-      .select("completed_at, energy, soreness")
+      .select("completed_at, duration, focus, energy, soreness")
       .eq("user_id", user.id)
       .order("completed_at", { ascending: false })
       .limit(30),
@@ -74,7 +75,21 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
   ]);
 
   const profileRow = (profile ?? {}) as Record<string, unknown>;
-  const logRows = (logs ?? []) as { completed_at: string; energy: number | null; soreness: number | null }[];
+  const logRows = (logs ?? []) as {
+    completed_at: string;
+    duration: number | null;
+    focus: string | null;
+    energy: number | null;
+    soreness: number | null;
+  }[];
+  const weeklyTrainingDays =
+    typeof profileRow.weekly_training_days === "number" ? Math.min(Math.max(profileRow.weekly_training_days, 1), 7) : 4;
+  const preferredWorkoutLength =
+    typeof profileRow.preferred_workout_length === "number" ? Math.min(Math.max(profileRow.preferred_workout_length, 10), 120) : null;
+  const momentum = calculateMomentumSystem(logRows, {
+    weeklyTarget: weeklyTrainingDays,
+    preferredWorkoutLength: preferredWorkoutLength ?? 35
+  });
   const currentWeekLogs = logRows.filter((row) => new Date(row.completed_at).getTime() >= oneWeekAgo);
   const previousWeekLogs = logRows.filter((row) => {
     const time = new Date(row.completed_at).getTime();
@@ -94,10 +109,8 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
   return {
     goal: asFitnessGoal(profileRow.primary_goal),
     experienceLevel: asExperience(profileRow.training_experience || profileRow.experience_level),
-    weeklyTrainingDays:
-      typeof profileRow.weekly_training_days === "number" ? Math.min(Math.max(profileRow.weekly_training_days, 1), 7) : 4,
-    preferredWorkoutLength:
-      typeof profileRow.preferred_workout_length === "number" ? Math.min(Math.max(profileRow.preferred_workout_length, 10), 120) : null,
+    weeklyTrainingDays,
+    preferredWorkoutLength,
     weakPoints: asWeakPoints(profileRow.weak_points),
     injuryNotes: typeof profileRow.injury_notes === "string" ? profileRow.injury_notes : null,
     dislikedExercises:
@@ -110,7 +123,12 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
     averageSoreness,
     performanceTrend: getPerformanceTrend(currentWeekLogs.length, previousWeekLogs.length, recentEnergy, priorEnergy),
     weeklyVolumeSets: ((exercises ?? []) as { sets: number | null }[]).reduce((sum, row) => sum + (row.sets ?? 0), 0),
-    recoveryTrend
+    recoveryTrend,
+    recentAdherence: momentum.adherencePercent / 100,
+    momentumScore: momentum.score,
+    momentumState: momentum.state,
+    momentumProtectionMode: momentum.protectionMode,
+    momentumRecoveryMode: momentum.recoveryMode
   };
 }
 

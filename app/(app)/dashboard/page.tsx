@@ -1,14 +1,15 @@
-import { Activity, CalendarCheck2, ChevronRight, Flame, Gauge, Lock, Sparkles, Trophy, Video } from "lucide-react";
+import { Activity, CalendarCheck2, ChevronRight, Gauge, Lock, RotateCcw, ShieldCheck, Sparkles, Video } from "lucide-react";
 
 import { DailyCoachMessage } from "@/components/daily-coach-message";
 import { EmptyState } from "@/components/empty-state";
+import { MomentumCard, WeeklyRecapCard } from "@/components/momentum-system";
 import { PageHeader } from "@/components/page-header";
 import { ProgressRing } from "@/components/progress-ring";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { demoStats } from "@/lib/demo-data";
+import { calculateMomentumSystem, type MomentumLog, type MomentumSystem } from "@/lib/momentum";
 import { normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -25,35 +26,70 @@ type DashboardData = {
   nextBestAction: string;
   planType: PlanType;
   hasPremiumAccess: boolean;
+  momentum: MomentumSystem;
 };
 
-function calculateStreak(days: string[]) {
-  const unique = new Set(days);
-  let streak = 0;
-  const cursor = new Date();
+function demoMomentumLogs(): MomentumLog[] {
+  const now = Date.now();
+  return [0, 2, 4, 7, 10, 14, 18, 22, 25].map((daysAgo, index) => ({
+    completed_at: new Date(now - daysAgo * 86400000).toISOString(),
+    duration: index % 3 === 0 ? 28 : 42,
+    focus: index % 2 === 0 ? "Upper" : "Full body",
+    energy: index % 4 === 0 ? 3 : 4,
+    soreness: index % 5 === 0 ? 3 : 2
+  }));
+}
 
-  for (let index = 0; index < 30; index += 1) {
-    const key = cursor.toISOString().slice(0, 10);
-    if (!unique.has(key)) break;
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
+function buildStats(rows: { completed_at: string; energy?: number | null }[], momentum: MomentumSystem): DashboardStat[] {
+  const avgEnergy =
+    rows.length > 0
+      ? rows.reduce((sum, row) => sum + (row.energy ?? 3), 0) / rows.length
+      : 0;
 
-  return streak;
+  return [
+    {
+      label: "Momentum score",
+      value: `${momentum.score}/100`,
+      detail: momentum.state
+    },
+    {
+      label: "Completed workouts",
+      value: `${rows.length}`,
+      detail: "Most recent 50 logs"
+    },
+    {
+      label: "Weekly consistency",
+      value: `${momentum.adherencePercent}%`,
+      detail: "Rolling 14-day adherence"
+    },
+    {
+      label: "Recovery balance",
+      value: `${momentum.recoveryBalance}/100`,
+      detail: momentum.recoveryMode ? "Recovery Momentum active" : "Training recovery signal"
+    },
+    {
+      label: "Energy trend",
+      value: rows.length > 0 ? `${avgEnergy.toFixed(1)}/5` : "Pending",
+      detail: "Gets smarter with more check-ins"
+    }
+  ];
 }
 
 async function getDashboardData(): Promise<DashboardData> {
   if (!isSupabaseConfigured) {
+    const demoLogs = demoMomentumLogs();
+    const momentum = calculateMomentumSystem(demoLogs, { weeklyTarget: 4, preferredWorkoutLength: 35 });
     return {
-      stats: demoStats,
+      stats: buildStats(demoLogs, momentum).slice(0, 4),
       consistency: 86,
       mostTrained: ["Upper", "Full body", "Core"],
-      insight: "Your best streak comes from lowering the bar on busy days, not skipping them.",
+      insight: momentum.explanation,
       readinessScore: 82,
-      readinessTitle: "Green light, but keep the session efficient",
-      nextBestAction: "Generate a 35-minute full-body session with one packed-gym fallback ready.",
+      readinessTitle: "Momentum is intact. Keep the next session repeatable.",
+      nextBestAction: momentum.recommendation,
       planType: "Free",
-      hasPremiumAccess: false
+      hasPremiumAccess: false,
+      momentum
     };
   }
 
@@ -64,7 +100,7 @@ async function getDashboardData(): Promise<DashboardData> {
 
   if (!user) {
     return {
-      stats: demoStats,
+      stats: buildStats([], calculateMomentumSystem([], { weeklyTarget: 4, preferredWorkoutLength: 35 })).slice(0, 4),
       consistency: 0,
       mostTrained: [],
       insight: "Log workouts to unlock personalized consistency insights.",
@@ -72,24 +108,34 @@ async function getDashboardData(): Promise<DashboardData> {
       readinessTitle: "Start with a small, clean win",
       nextBestAction: "Save your first adaptive workout so FlexFit can learn your rhythm.",
       planType: "Free",
-      hasPremiumAccess: false
+      hasPremiumAccess: false,
+      momentum: calculateMomentumSystem([], { weeklyTarget: 4, preferredWorkoutLength: 35 })
     };
   }
 
   const [{ data: logs }, { data: profile }] = await Promise.all([
     supabase
       .from("workout_logs")
-      .select("completed_at, focus, energy")
+      .select("completed_at, duration, focus, energy, soreness")
       .eq("user_id", user.id)
       .order("completed_at", { ascending: false })
       .limit(50),
-    supabase.from("profiles").select("plan_type").eq("user_id", user.id).maybeSingle()
+    supabase.from("profiles").select("plan_type, weekly_training_days, preferred_workout_length").eq("user_id", user.id).maybeSingle()
   ]);
 
-  const rows = (logs ?? []) as { completed_at: string; focus: string | null; energy: number | null }[];
-  const planType = normalizePlanType((profile as { plan_type?: unknown } | null)?.plan_type);
+  const rows = (logs ?? []) as {
+    completed_at: string;
+    duration: number | null;
+    focus: string | null;
+    energy: number | null;
+    soreness: number | null;
+  }[];
+  const profileRow = (profile ?? {}) as { plan_type?: unknown; weekly_training_days?: unknown; preferred_workout_length?: unknown };
+  const planType = normalizePlanType(profileRow.plan_type);
   const premiumAccess = hasPremiumAccess(planType);
-  const days = rows.map((row) => row.completed_at.slice(0, 10));
+  const weeklyTarget = typeof profileRow.weekly_training_days === "number" ? profileRow.weekly_training_days : 4;
+  const preferredLength = typeof profileRow.preferred_workout_length === "number" ? profileRow.preferred_workout_length : 35;
+  const momentum = calculateMomentumSystem(rows, { weeklyTarget, preferredWorkoutLength: preferredLength });
   const now = Date.now();
   const weekRows = rows.filter((row) => now - new Date(row.completed_at).getTime() <= 7 * 86400000);
   const consistency = Math.min(100, Math.round((weekRows.length / 4) * 100));
@@ -108,59 +154,41 @@ async function getDashboardData(): Promise<DashboardData> {
       : 0;
 
   return {
-    stats: [
-      {
-        label: "Workout streak",
-        value: `${calculateStreak(days)} days`,
-        detail: "Consecutive completed days"
-      },
-      {
-        label: "Completed workouts",
-        value: `${rows.length}`,
-        detail: "Most recent 50 logs"
-      },
-      {
-        label: "Weekly consistency",
-        value: `${consistency}%`,
-        detail: `${weekRows.length} sessions this week`
-      },
-      {
-        label: "Energy trend",
-        value: rows.length > 0 ? `${avgEnergy.toFixed(1)}/5` : "Pending",
-        detail: "Gets smarter with more check-ins"
-      }
-    ],
+    stats: buildStats(rows, momentum).slice(0, 4),
     consistency,
     mostTrained,
     insight:
       rows.length > 0
-        ? "You are building a pattern. Keep choosing the version of the workout that fits today."
+        ? momentum.explanation
         : "Generate and save your first workout to start seeing your consistency story.",
-    readinessScore: Math.max(45, Math.min(94, Math.round(consistency * 0.65 + avgEnergy * 8))),
+    readinessScore: Math.max(45, Math.min(94, Math.round(momentum.score * 0.72 + avgEnergy * 6))),
     readinessTitle:
-      rows.length > 0 && avgEnergy >= 3.5
-        ? "Ready for a useful push"
-        : "Keep the dose manageable today",
+      momentum.protectionMode
+        ? "Momentum Protection Mode is the right move"
+        : rows.length > 0 && avgEnergy >= 3.5
+          ? "Ready for a useful push"
+          : "Keep the dose manageable today",
     nextBestAction:
       rows.length > 0
-        ? "Generate today's workout and let energy, soreness, and crowding set the volume."
+        ? momentum.recommendation
         : "Run a 20-30 minute starter workout and save it as completed.",
     planType: getEffectivePlanType(planType),
-    hasPremiumAccess: premiumAccess
+    hasPremiumAccess: premiumAccess,
+    momentum
   };
 }
 
 export default async function DashboardPage() {
   const data = await getDashboardData();
-  const icons = [Flame, Trophy, CalendarCheck2, Activity];
+  const icons = [Activity, CalendarCheck2, RotateCcw, ShieldCheck];
   const hasFormCoachAccess = data.hasPremiumAccess;
 
   return (
     <>
       <PageHeader
         eyebrow="Daily operating brief"
-        title="Today's plan fits today's life."
-        copy="A premium dashboard should not just count workouts. It should tell you what to do next, what to protect, and what is working."
+        title="Protect momentum, then build fitness."
+        copy="LiftLens tracks consistency like a coaching system. Missed days become programming context, not failure."
       >
         <Button asChild>
           <a href="/workout">Generate workout</a>
@@ -169,7 +197,12 @@ export default async function DashboardPage() {
 
       <DailyCoachMessage />
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <MomentumCard momentum={data.momentum} />
+        <WeeklyRecapCard recap={data.momentum.weeklyRecap} />
+      </section>
+
+      <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="overflow-hidden border-primary/25 bg-gradient-to-br from-primary/14 via-white/[0.055] to-accent/10">
           <CardContent className="p-5 sm:p-6">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
@@ -186,9 +219,9 @@ export default async function DashboardPage() {
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               {[
-                ["Training dose", data.readinessScore > 75 ? "Push steady" : "Trim volume"],
-                ["Friction rule", "Pick the plan you can start"],
-                ["Recovery guardrail", "Leave one clean rep in reserve"]
+                ["Today's intensity", data.momentum.protectionMode ? "Friction reduced" : data.readinessScore > 75 ? "Push steady" : "Trim volume"],
+                ["Friction rule", data.momentum.protectionMode ? "Shorter, simpler, startable" : "Pick the plan you can start"],
+                ["Recovery guardrail", data.momentum.recoveryMode ? "Recovery Momentum active" : "Leave one clean rep in reserve"]
               ].map(([label, value]) => (
                 <div key={label} className="rounded-2xl border border-white/10 bg-black/25 p-4">
                   <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
