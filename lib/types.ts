@@ -82,6 +82,19 @@ export type StrategyType =
 
 export type MuscleSoreness = Partial<Record<WeakPoint, number>>;
 
+export type ExerciseInstructionSections = Partial<{
+  setup: string | string[];
+  howToPerform: string | string[];
+  execution: string | string[];
+  formCues: string | string[];
+  breathing: string | string[];
+  commonMistakes: string | string[];
+  safetyTips: string | string[];
+  musclesWorked: string | string[];
+}>;
+
+export type ExerciseInstructionValue = string | string[] | ExerciseInstructionSections;
+
 export type InputImpact = {
   signal: string;
   value: string;
@@ -129,6 +142,13 @@ export type ExercisePrescription = {
   rest: string;
   cue: string;
   substitution: string;
+  instructions?: ExerciseInstructionValue;
+  coachingNotes?: ExerciseInstructionValue;
+  cues?: ExerciseInstructionValue;
+  formTips?: ExerciseInstructionValue;
+  techniqueNotes?: ExerciseInstructionValue;
+  coachingCues?: ExerciseInstructionValue;
+  videoUrl?: string | null;
 };
 
 export type GeneratedWorkout = {

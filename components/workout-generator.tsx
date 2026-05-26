@@ -21,6 +21,7 @@ import {
   saveWorkoutAction,
   updateDailyWorkoutStatusAction
 } from "@/app/app-actions";
+import { CompletedTodayBanner, CompletionSuccessModal } from "@/components/workout-completion-celebration";
 import { WorkoutCard, type WorkoutViewMode } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,6 +55,10 @@ import { generateWorkout, type WorkoutEngineContext } from "@/lib/workout/genera
 import { cn } from "@/lib/utils";
 
 const sorenessMuscles: WeakPoint[] = ["chest", "shoulders", "back", "legs", "glutes", "core"];
+
+function getTodayWorkoutDateKey() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const defaultInput: DailyCheckIn = {
   timeAvailable: 35,
@@ -333,6 +338,7 @@ export function WorkoutGenerator({
   const [hasGenerated, setHasGenerated] = useState(Boolean(initialDailyWorkout));
   const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkout);
   const [showRegenerateOptions, setShowRegenerateOptions] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const fitScore = useMemo(() => {
@@ -358,6 +364,16 @@ export function WorkoutGenerator({
     setIsEditingInputs(false);
     setMessage(persistenceSource === "local" ? "Today's workout loaded from this browser." : "Today's workout loaded.");
   }, [dailyWorkout, persistenceSource]);
+
+  useEffect(() => {
+    if (dailyWorkout?.status !== "completed") {
+      setShowCompletionModal(false);
+    }
+  }, [dailyWorkout?.status]);
+
+  function closeCompletionModal() {
+    setShowCompletionModal(false);
+  }
 
   function updateInput<T extends keyof DailyCheckIn>(key: T, value: DailyCheckIn[T]) {
     setInput((current) => ({ ...current, [key]: value }));
@@ -463,6 +479,7 @@ export function WorkoutGenerator({
         if (isLocalDailyWorkout(dailyWorkout)) {
           updateLocalStatus("completed");
           setMessage("Workout completed. Momentum protected.");
+          setShowCompletionModal(true);
           return;
         }
 
@@ -475,6 +492,7 @@ export function WorkoutGenerator({
 
         const saveResult = await saveWorkoutAction(workout, input);
         setMessage(saveResult.ok ? "Workout completed. Momentum protected." : saveResult.message);
+        setShowCompletionModal(true);
       } catch {
         setMessage("We could not complete that yet. Your workout is still here, and you can try again in a moment.");
       }
@@ -491,9 +509,16 @@ export function WorkoutGenerator({
         : dailyWorkout?.status === "skipped"
           ? "Skipped"
           : "Planned";
+  const isTodayWorkoutCompleted =
+    dailyWorkout?.status === "completed" && dailyWorkout.workoutDate === getTodayWorkoutDateKey();
+  const showCompletedBanner = isTodayWorkoutCompleted && !showCompletionModal;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <CompletionSuccessModal open={showCompletionModal} onClose={closeCompletionModal} />
+
+      <CompletedTodayBanner show={showCompletedBanner} />
+
       {dailyWorkout && !showCheckIn ? (
         <Card className="border-primary/20 bg-primary/10">
           <CardContent className="space-y-4 p-5">

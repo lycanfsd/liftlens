@@ -1,6 +1,15 @@
+"use client";
+
+import { useState } from "react";
 import { ChevronDown, Gauge, Link2, Repeat2, ShieldAlert } from "lucide-react";
 
+import {
+  ExerciseActionButtons,
+  ExerciseSupportModal,
+  type ExerciseSupportMode
+} from "@/components/exercise-support-modal";
 import type { ExercisePrescription } from "@/lib/types";
+import { toTitleCase } from "@/lib/utils";
 
 type ExercisePill = {
   label: string;
@@ -108,16 +117,27 @@ export function ExerciseCard({
   advanced?: boolean;
 }) {
   const insights = exerciseInsights(exercise);
+  const [activeExerciseModal, setActiveExerciseModal] = useState<ExerciseSupportMode | null>(null);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <ExerciseSupportModal exercise={exercise} mode={activeExerciseModal} onClose={() => setActiveExerciseModal(null)} />
+
       <div className="flex gap-3">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/10 text-sm font-semibold text-white">
           {index + 1}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="font-semibold text-white">{exercise.name}</h4>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="font-semibold text-white">{exercise.name}</h4>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">{toTitleCase(exercise.muscleGroup)}</p>
+            </div>
+            <ExerciseActionButtons
+              exerciseName={exercise.name}
+              onVideo={() => setActiveExerciseModal("video")}
+              onInstructions={() => setActiveExerciseModal("instructions")}
+            />
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{exercise.cue}</p>
 
