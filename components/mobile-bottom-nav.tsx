@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Dumbbell, History, Home, Lock, MessageCircle, Target, UserRound, Video } from "lucide-react";
+import { BarChart3, Dumbbell, History, Home, Lock, MessageCircle, Target, UserRound, Video } from "lucide-react";
 
 import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const mobileItems = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/workout", label: "Today", icon: Dumbbell },
+  { href: "/progress", label: "Progress", icon: BarChart3 },
   { href: "/form-coach", label: "Form", icon: Video, proOnly: true },
   { href: "/weak-points", label: "Focus", icon: Target },
   { href: "/history", label: "History", icon: History },
@@ -22,7 +23,7 @@ export function MobileBottomNav({ userIdentity }: { userIdentity: AppUserIdentit
   const hasFormCoachAccess = userIdentity.hasPremiumAccess;
 
   return (
-    <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-7 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur lg:hidden">
+    <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-8 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur lg:hidden">
       {mobileItems.map((item) => {
         const active = pathname === item.href;
         const locked = item.proOnly && !hasFormCoachAccess;

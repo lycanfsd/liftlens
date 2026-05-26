@@ -1,0 +1,1271 @@
+"use client";
+
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Camera,
+  CheckCircle2,
+  Dumbbell,
+  Flame,
+  LineChart,
+  Minus,
+  Moon,
+  Plus,
+  Scale,
+  ShieldCheck,
+  Sparkles,
+  Trophy
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
+import { StatCard } from "@/components/stat-card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
+import { metricChange, physiqueMetricLabels } from "@/lib/progress/physique-metrics";
+import {
+  formatPRDate,
+  getAllTimePRForLift,
+  getEntriesForLift,
+  getLatestPRForLift,
+  getPRChangeForLift,
+  getPRHistory,
+  getPRPercentChangeForLift,
+  getPRStorageKey,
+  mainPRLifts,
+  savePRHistoryEntry,
+  type PRHistoryEntry,
+  type PRLift
+} from "@/lib/progress/pr-history";
+import type { ProgressAnalytics } from "@/lib/progress/progress-analytics";
+import type { RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
+import { calculateRecoveryScore, recoveryInterpretation } from "@/lib/progress/recovery-metrics";
+import { cn } from "@/lib/utils";
+
+const physiqueStorageKey = "flexfit-physique-measurements";
+const recoveryStorageKey = "flexfit-recovery-logs";
+const polishedCardHover = "transition duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-white/[0.055]";
+const insetPanel = "rounded-2xl border border-white/10 bg-white/[0.035]";
+
+type PhysiqueFormState = Record<keyof Omit<PhysiqueMeasurementEntry, "id" | "date">, string> & {
+  date: string;
+};
+
+type RecoveryFormState = {
+  date: string;
+  sleepHours: string;
+  energy: string;
+  soreness: string;
+  stress: string;
+  workoutRpe: string;
+};
+
+type PRFormState = {
+  lift: PRLift;
+  date: string;
+  oneRepMax: string;
+  notes: string;
+};
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function createId(prefix: string) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function safeNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && value !== "" ? parsed : null;
+}
+
+function loadLocalArray<T>(key: string): T[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalArray<T>(key: string, value: T[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function formatChange(change: number | null, unit: string) {
+  if (change === null) return "First entry";
+  if (change === 0) return "No change";
+  return `${change > 0 ? "+" : ""}${change.toFixed(1)} ${unit}`;
+}
+
+function ProgressSection({
+  title,
+  copy,
+  children,
+  action
+}: {
+  title: string;
+  copy?: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-5 scroll-mt-24">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex max-w-3xl gap-3">
+          <span className="mt-1 h-9 w-1 rounded-full bg-primary/70 shadow-[0_0_20px_rgba(74,222,128,0.25)]" />
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-white">{title}</h2>
+            {copy ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy}</p> : null}
+          </div>
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MiniBar({ value, max = 100, tone = "green" }: { value: number; max?: number; tone?: "green" | "blue" | "amber" }) {
+  const width = `${Math.min(100, Math.max(0, (value / max) * 100))}%`;
+  const color = tone === "blue" ? "bg-accent" : tone === "amber" ? "bg-amber-300" : "bg-primary";
+
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-white/10 shadow-inner shadow-black/20">
+      <div className={cn("h-full rounded-full transition-all duration-500", color)} style={{ width }} />
+    </div>
+  );
+}
+
+function SourceBadge({ real }: { real: boolean }) {
+  return (
+    <Badge className={real ? "border-primary/25 bg-primary/10 text-primary" : "border-white/10 bg-white/[0.04] text-muted-foreground"}>
+      {real ? "Real data" : "Demo adapter"}
+    </Badge>
+  );
+}
+
+function ProgressTrajectoryCard({ analytics, recoveryScore }: { analytics: ProgressAnalytics; recoveryScore: number }) {
+  const completion = analytics.consistency.completionRate;
+  const hasStrongSignal = analytics.hasRealWorkoutData && analytics.hasRealLoadData;
+  const nextMove =
+    recoveryScore < 60
+      ? "Keep intensity controlled until recovery rebounds."
+      : completion < 70
+        ? "Protect the next session with a low-friction plan."
+        : "Use this week to push strength or weak points forward.";
+
+  return (
+    <Card className="overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]">
+      <CardContent className="p-5 sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              Physique trajectory
+            </div>
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Progress without noise.</h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              The important signals are consistency, strength, recovery, and balanced volume. Everything else stays tucked away until it matters.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[460px]">
+            {[
+              ["Completion", `${completion}%`, completion >= 80 ? "On pace" : "Needs one win"],
+              ["Recovery", `${recoveryScore}/100`, recoveryInterpretation(recoveryScore)],
+              ["Data signal", hasStrongSignal ? "Live" : "Blended", hasStrongSignal ? "Real workout data" : "Some demo adapters"]
+            ].map(([label, value, copy]) => (
+              <div key={label} className={cn(insetPanel, "p-4")}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-5 rounded-2xl border border-primary/15 bg-black/25 p-4 text-sm leading-6 text-muted-foreground">
+          <span className="font-semibold text-primary">Next best move:</span> {nextMove}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverviewCards({ analytics, recoveryScore }: { analytics: ProgressAnalytics; recoveryScore: number }) {
+  const recoveryText = recoveryInterpretation(recoveryScore);
+
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <StatCard
+        label="Workout completion rate"
+        value={analytics.overview.completionRate}
+        detail={analytics.overview.completionSubtext}
+        icon={CheckCircle2}
+        accent="green"
+      />
+      <StatCard
+        label="Current streak"
+        value={analytics.overview.currentStreak}
+        detail={analytics.overview.streakSubtext}
+        icon={Flame}
+        accent="blue"
+      />
+      <StatCard
+        label="Weekly volume"
+        value={analytics.overview.weeklyVolume}
+        detail={analytics.overview.weeklyVolumeSubtext}
+        icon={Dumbbell}
+        accent="silver"
+      />
+      <StatCard
+        label="Strength progress"
+        value={analytics.overview.strengthProgress}
+        detail={analytics.overview.strengthSubtext}
+        icon={Trophy}
+        accent="green"
+      />
+      <StatCard
+        label="Recovery score"
+        value={`${recoveryScore}/100`}
+        detail={recoveryText}
+        icon={ShieldCheck}
+        accent="blue"
+      />
+    </section>
+  );
+}
+
+function ConsistencyAnalytics({ analytics }: { analytics: ProgressAnalytics }) {
+  const consistency = analytics.consistency;
+
+  return (
+    <ProgressSection title="Consistency" copy="Consistency matters more than perfection. This view keeps the week honest without guilt.">
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["This week", `${consistency.completedThisWeek}`, "Workouts completed"],
+                ["This month", `${consistency.completedThisMonth}`, "Completed sessions"],
+                ["Current streak", `${consistency.currentStreak} days`, "Keep stacking wins"],
+                ["Best streak", `${consistency.bestStreak} days`, "Best run so far"],
+                ["Missed", `${consistency.missedThisWeek}`, "This week"],
+                ["Completion", `${consistency.completionRate}%`, "Weekly rate"]
+              ].map(([label, value, copy]) => (
+                <div key={label} className={cn(insetPanel, "p-4 transition hover:border-primary/20 hover:bg-white/[0.05]")}>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{copy}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-white">This week</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Completed vs missed workout days.</p>
+              </div>
+              <SourceBadge real={analytics.hasRealWorkoutData} />
+            </div>
+            <div className="mt-5 grid grid-cols-4 gap-2 sm:grid-cols-7">
+              {consistency.weekDays.map((day) => (
+                <div
+                  key={day.date}
+                  className={cn(
+                    "min-h-24 rounded-2xl border p-3 text-center transition hover:border-primary/20 hover:bg-white/[0.05]",
+                    day.completed
+                      ? "border-primary/30 bg-primary/12 text-primary"
+                      : "border-white/10 bg-white/[0.035] text-muted-foreground",
+                    day.isToday && "ring-1 ring-accent/50"
+                  )}
+                >
+                  <p className="text-[11px] font-semibold uppercase">{day.label}</p>
+                  <div className="mt-3 grid place-items-center">
+                    <span
+                      className={cn(
+                        "grid h-8 w-8 place-items-center rounded-full border",
+                        day.completed ? "border-primary/30 bg-primary/15" : "border-white/10 bg-black/20"
+                      )}
+                    >
+                      {day.completed ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-1.5 w-1.5 rounded-full bg-white/30" />}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5">
+              <MiniBar value={consistency.completionRate} />
+              <p className="mt-2 text-xs text-muted-foreground">
+                {consistency.completedThisWeek} of {consistency.weeklyTarget} target workouts completed.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </ProgressSection>
+  );
+}
+
+function formatPRValue(entry: PRHistoryEntry | null, unit: "lb" | "kg") {
+  return entry ? `${entry.oneRepMax.toLocaleString()} ${unit}` : "No PR";
+}
+
+function formatPRDelta(change: number | null, percent: number | null, unit: "lb" | "kg") {
+  if (change === null || percent === null) return "No trend yet";
+  if (change === 0) return "Unchanged";
+  return `${change > 0 ? "+" : ""}${change.toLocaleString()} ${unit} (${percent > 0 ? "+" : ""}${percent.toFixed(1)}%)`;
+}
+
+function isLatestAllTimePR(latest: PRHistoryEntry | null, allTime: PRHistoryEntry | null) {
+  return Boolean(latest && allTime && latest.id === allTime.id && latest.oneRepMax === allTime.oneRepMax);
+}
+
+function getStrengthPRInsight(lift: string, entries: PRHistoryEntry[], unit: "lb" | "kg") {
+  const change = getPRChangeForLift(entries, lift, unit);
+  const percent = getPRPercentChangeForLift(entries, lift, unit);
+
+  if (!entries.length) {
+    return `Add your current ${lift} one-rep max to set a baseline. Strength trends are one of the cleanest signals that your training is supporting muscle growth.`;
+  }
+
+  if (entries.length === 1) {
+    return `${lift} baseline logged at ${entries[0].oneRepMax} ${unit}. Add another entry later to see your trend.`;
+  }
+
+  if (change && change > 0) {
+    return `Your ${lift} is up ${change} ${unit} since the last entry${percent ? ` (${percent.toFixed(1)}%)` : ""}. Strong progress.`;
+  }
+
+  if (change === 0) {
+    return `Your ${lift} is holding steady. Add reps or small weight jumps over time.`;
+  }
+
+  return `Your ${lift} is below the last entry. That can reflect fatigue, recovery, or a conservative estimate. Keep the next update honest.`;
+}
+
+function PRTrendIcon({ change }: { change: number | null }) {
+  if (change === null || change === 0) return <Minus className="h-4 w-4" />;
+  if (change > 0) return <ArrowUpRight className="h-4 w-4" />;
+  return <ArrowDownRight className="h-4 w-4" />;
+}
+
+function StrengthPRCard({
+  lift,
+  entries,
+  selected,
+  unit,
+  onSelect
+}: {
+  lift: PRLift;
+  entries: PRHistoryEntry[];
+  selected: boolean;
+  unit: "lb" | "kg";
+  onSelect: (lift: PRLift) => void;
+}) {
+  const latest = getLatestPRForLift(entries, lift, unit);
+  const allTime = getAllTimePRForLift(entries, lift, unit);
+  const change = getPRChangeForLift(entries, lift, unit);
+  const percent = getPRPercentChangeForLift(entries, lift, unit);
+  const newPr = isLatestAllTimePR(latest, allTime);
+
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={() => onSelect(lift)}
+      className={cn(
+        "group relative overflow-hidden rounded-2xl border p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-white/[0.055]",
+        selected
+          ? "border-primary/45 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.15),transparent_45%),rgba(74,222,128,0.07)] ring-1 ring-primary/35 shadow-[0_0_34px_rgba(74,222,128,0.10)]"
+          : "border-white/10 bg-white/[0.035]"
+      )}
+    >
+      {selected ? <span className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-primary/80 to-transparent" /> : null}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-semibold text-white">{lift}</p>
+            {selected ? <Badge className="border-primary/20 bg-primary/10 text-primary">Selected</Badge> : null}
+            {newPr ? <Badge className="border-primary/25 bg-primary/15 text-primary">New PR</Badge> : null}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{latest ? `Updated ${formatPRDate(latest.date)}` : "No PR logged yet"}</p>
+        </div>
+        <span
+          className={cn(
+            "grid h-8 w-8 shrink-0 place-items-center rounded-xl border transition group-hover:scale-105",
+            change && change > 0
+              ? "border-primary/25 bg-primary/10 text-primary"
+              : change && change < 0
+                ? "border-amber-300/25 bg-amber-300/10 text-amber-100"
+                : "border-white/10 bg-black/20 text-muted-foreground"
+          )}
+          aria-hidden="true"
+        >
+          <PRTrendIcon change={change} />
+        </span>
+      </div>
+      <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Current 1RM</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{formatPRValue(latest, unit)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">All-time</p>
+            <p className="mt-1 text-sm font-semibold text-white">{formatPRValue(allTime, unit)}</p>
+          </div>
+        </div>
+      </div>
+      <p className={cn("mt-4 text-sm font-semibold", change && change > 0 ? "text-primary" : "text-muted-foreground")}>
+        {formatPRDelta(change, percent, unit)}
+      </p>
+    </button>
+  );
+}
+
+function PRTrendChart({ entries, lift, unit }: { entries: PRHistoryEntry[]; lift: string; unit: "lb" | "kg" }) {
+  const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setActivePointIndex(null);
+  }, [lift]);
+
+  if (!entries.length) {
+    return (
+      <div className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-white/15 bg-white/[0.025] p-8 text-center">
+        <div>
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <LineChart className="h-6 w-6" />
+          </span>
+          <h4 className="mt-4 font-semibold text-white">Start tracking your strength</h4>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+            Add your current one-rep max for your main lifts to see your progress over time.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const width = 680;
+  const height = 270;
+  const padding = { top: 24, right: 22, bottom: 42, left: 52 };
+  const values = entries.map((entry) => entry.oneRepMax);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const spread = Math.max(1, maxValue - minValue);
+  const chartMin = Math.max(0, Math.floor(minValue - spread * 0.14));
+  const chartMax = Math.ceil(maxValue + spread * 0.14);
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const points = entries.map((entry, index) => {
+    const x =
+      entries.length === 1
+        ? padding.left + innerWidth / 2
+        : padding.left + (index / (entries.length - 1)) * innerWidth;
+    const y = padding.top + (1 - (entry.oneRepMax - chartMin) / Math.max(1, chartMax - chartMin)) * innerHeight;
+    return { x, y, entry };
+  });
+  const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const activePoint = activePointIndex !== null ? points[activePointIndex] ?? null : null;
+  const areaPath =
+    points.length > 1
+      ? `M ${points[0].x} ${height - padding.bottom} L ${points.map((point) => `${point.x} ${point.y}`).join(" L ")} L ${
+          points[points.length - 1].x
+        } ${height - padding.bottom} Z`
+      : "";
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold text-white">{lift} trend</h3>
+          <p className="mt-1 text-sm text-muted-foreground">One-rep max history over time.</p>
+        </div>
+        <Badge className="w-fit border-primary/20 bg-primary/10 text-primary">{entries.length} entries</Badge>
+      </div>
+      <div className="mt-5 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.025]">
+        <div className="relative h-64 min-w-[540px] sm:h-72 sm:min-w-0">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={`${lift} one-rep max trend`}
+          className="absolute inset-0 h-full w-full"
+        >
+          <defs>
+            <linearGradient id={`pr-gradient-${lift.replace(/\W+/g, "-").toLowerCase()}`} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="rgb(74 222 128)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="rgb(74 222 128)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0, 1, 2, 3].map((line) => {
+            const y = padding.top + (line / 3) * innerHeight;
+            return <line key={line} x1={padding.left} x2={width - padding.right} y1={y} y2={y} stroke="rgba(255,255,255,0.08)" />;
+          })}
+          <text x={padding.left - 10} y={padding.top + 4} textAnchor="end" className="fill-white/45 text-[11px]">
+            {chartMax} {unit}
+          </text>
+          <text x={padding.left - 10} y={height - padding.bottom + 4} textAnchor="end" className="fill-white/45 text-[11px]">
+            {chartMin} {unit}
+          </text>
+          {areaPath ? <path d={areaPath} fill={`url(#pr-gradient-${lift.replace(/\W+/g, "-").toLowerCase()})`} /> : null}
+          {points.length > 1 ? <polyline fill="none" points={linePoints} stroke="rgb(74 222 128)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" /> : null}
+          {points.map((point, index) => (
+            <g
+              key={`${point.entry.date}-${point.entry.oneRepMax}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`${lift} ${formatPRDate(point.entry.date)} ${point.entry.oneRepMax} ${unit}`}
+              className="cursor-pointer outline-none"
+              onBlur={() => setActivePointIndex(null)}
+              onClick={() => setActivePointIndex(index)}
+              onFocus={() => setActivePointIndex(index)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setActivePointIndex(index);
+                }
+              }}
+              onMouseEnter={() => setActivePointIndex(index)}
+              onMouseLeave={() => setActivePointIndex(null)}
+            >
+              <circle cx={point.x} cy={point.y} r="18" fill="transparent" />
+              <circle cx={point.x} cy={point.y} r="7" fill="rgb(74 222 128)" opacity="0.24" />
+              <circle
+                cx={point.x}
+                cy={point.y}
+                r={activePointIndex === index ? "6" : "4"}
+                fill="rgb(74 222 128)"
+                stroke={activePointIndex === index ? "rgba(255,255,255,0.9)" : "transparent"}
+                strokeWidth="2"
+              />
+            </g>
+          ))}
+          <text x={padding.left} y={height - 14} textAnchor="start" className="fill-white/45 text-[11px]">
+            {formatPRDate(entries[0].date)}
+          </text>
+          <text x={width - padding.right} y={height - 14} textAnchor="end" className="fill-white/45 text-[11px]">
+            {formatPRDate(entries[entries.length - 1].date)}
+          </text>
+        </svg>
+        {activePoint ? (
+          <div
+            className="pointer-events-none absolute z-10 min-w-44 max-w-60 rounded-2xl border border-primary/30 bg-black/90 p-3 text-left shadow-[0_18px_48px_rgba(0,0,0,0.45)] backdrop-blur"
+            style={{
+              left: `${(activePoint.x / width) * 100}%`,
+              top: `${(activePoint.y / height) * 100}%`,
+              transform: `translate(${
+                activePoint.x > width * 0.72 ? "-92%" : activePoint.x < width * 0.28 ? "-8%" : "-50%"
+              }, ${activePoint.y < height * 0.34 ? "18px" : "-115%"})`
+            }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">{lift}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{formatPRDate(activePoint.entry.date)}</p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              1RM: {activePoint.entry.oneRepMax} {activePoint.entry.unit}
+            </p>
+            {activePoint.entry.notes ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Note: {activePoint.entry.notes}</p> : null}
+          </div>
+        ) : null}
+        </div>
+      </div>
+      {entries.length === 1 ? (
+        <p className="mt-3 text-sm text-muted-foreground">Add another entry later to see your trend line.</p>
+      ) : null}
+      <p className="mt-3 text-xs text-muted-foreground sm:hidden">Swipe sideways to inspect the full trend.</p>
+    </div>
+  );
+}
+
+function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressAnalytics; userId?: string | null }) {
+  const unit = "lb";
+  const storageKey = useMemo(() => getPRStorageKey(userId), [userId]);
+  const [entries, setEntries] = useState<PRHistoryEntry[]>([]);
+  const [selectedLift, setSelectedLift] = useState<PRLift>(mainPRLifts[0]);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState<PRFormState>({
+    lift: mainPRLifts[0],
+    date: todayKey(),
+    oneRepMax: "",
+    notes: ""
+  });
+  const selectedEntries = useMemo(() => getEntriesForLift(entries, selectedLift, unit), [entries, selectedLift]);
+  const latest = getLatestPRForLift(entries, selectedLift, unit);
+  const allTime = getAllTimePRForLift(entries, selectedLift, unit);
+  const selectedChange = getPRChangeForLift(entries, selectedLift, unit);
+  const selectedPercent = getPRPercentChangeForLift(entries, selectedLift, unit);
+  const selectedNewPr = isLatestAllTimePR(latest, allTime);
+  const hasAnyPrs = entries.length > 0;
+
+  useEffect(() => {
+    setEntries(getPRHistory(storageKey));
+  }, [storageKey]);
+
+  function selectLift(lift: PRLift) {
+    setSelectedLift(lift);
+    setForm((current) => ({ ...current, lift }));
+    setError("");
+    setMessage("");
+  }
+
+  function updateField<K extends keyof PRFormState>(key: K, value: PRFormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function savePr() {
+    const oneRepMax = Number(form.oneRepMax);
+
+    if (!form.lift) {
+      setError("Choose a lift to track.");
+      setMessage("");
+      return;
+    }
+
+    if (!form.date) {
+      setError("Choose a date for this PR.");
+      setMessage("");
+      return;
+    }
+
+    if (!Number.isFinite(oneRepMax) || oneRepMax <= 0) {
+      setError("Enter a positive one-rep max.");
+      setMessage("");
+      return;
+    }
+
+    const next = savePRHistoryEntry(storageKey, {
+      id: createId("pr"),
+      lift: form.lift,
+      date: form.date,
+      oneRepMax: Math.round(oneRepMax * 10) / 10,
+      unit,
+      notes: form.notes.trim() || undefined,
+      createdAt: new Date().toISOString()
+    });
+
+    setEntries(next);
+    setSelectedLift(form.lift);
+    setError("");
+    setMessage(`${form.lift} PR saved.`);
+    setForm((current) => ({ ...current, oneRepMax: "", notes: "" }));
+  }
+
+  return (
+    <ProgressSection
+      title="Strength PRs"
+      copy="Track your one-rep maxes and watch your strength trend upward."
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Badge className="border-primary/20 bg-primary/10 text-primary">Local PR log</Badge>
+          <SourceBadge real={analytics.hasRealLoadData} />
+        </div>
+      }
+    >
+      <div className="grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-white">Add PR entry</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Quick update. Same lift/date replaces the old point.</p>
+              </div>
+              <Trophy className="h-5 w-5 text-primary" />
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1.25fr_0.9fr]">
+              <div className="grid gap-2 xl:col-span-2">
+                <Label htmlFor="pr-lift">Lift</Label>
+                <select
+                  id="pr-lift"
+                  value={form.lift}
+                  onChange={(event) => updateField("lift", event.target.value as PRLift)}
+                  className="flex h-11 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white outline-none transition focus:border-primary/70 focus:ring-2 focus:ring-primary/20"
+                >
+                  {mainPRLifts.map((lift) => (
+                    <option key={lift} value={lift} className="bg-background text-white">
+                      {lift}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="pr-date">Date</Label>
+                <Input id="pr-date" type="date" value={form.date} onChange={(event) => updateField("date", event.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="pr-max">1RM</Label>
+                <Input
+                  id="pr-max"
+                  type="number"
+                  min="1"
+                  step="0.5"
+                  placeholder={`e.g. 185 ${unit}`}
+                  value={form.oneRepMax}
+                  onChange={(event) => updateField("oneRepMax", event.target.value)}
+                />
+              </div>
+              <div className="grid gap-2 sm:col-span-2">
+                <Label htmlFor="pr-notes">Notes</Label>
+                <Input
+                  id="pr-notes"
+                  placeholder="Felt strong, smooth rep"
+                  value={form.notes}
+                  onChange={(event) => updateField("notes", event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Button type="button" className="w-full sm:w-auto" onClick={savePr}>
+                <Plus className="h-4 w-4" />
+                Save PR
+              </Button>
+              {message ? <p className="text-sm text-primary">{message}</p> : null}
+              {error ? <p className="text-sm text-amber-100">{error}</p> : null}
+            </div>
+
+            {!hasAnyPrs ? (
+              <div className="mt-5 rounded-2xl border border-dashed border-white/15 bg-white/[0.025] p-5">
+                <p className="font-semibold text-white">Start tracking your strength</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Add your current one-rep max for your main lifts to see your progress over time.
+                </p>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden border-primary/25 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.16),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.025))] transition hover:border-primary/35">
+          <CardContent className="p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-semibold text-white">{selectedLift}</h3>
+                  {selectedNewPr ? <Badge className="border-primary/25 bg-primary/15 text-primary">New PR</Badge> : null}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">Selected lift performance snapshot.</p>
+              </div>
+              <Badge className="w-fit border-primary/20 bg-primary/10 text-primary">Goal signal</Badge>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {[
+                ["Current", formatPRValue(latest, unit)],
+                ["All-time PR", formatPRValue(allTime, unit)],
+                ["Last change", formatPRDelta(selectedChange, selectedPercent, unit)]
+              ].map(([label, value]) => (
+                <div key={label} className={cn(insetPanel, "p-4 transition hover:border-primary/20 hover:bg-white/[0.05]")}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+                  <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 rounded-2xl border border-primary/15 bg-black/25 p-4 text-sm leading-6 text-muted-foreground">
+              <span className="font-semibold text-primary">Coach read:</span> {getStrengthPRInsight(selectedLift, selectedEntries, unit)}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {mainPRLifts.map((lift) => (
+          <StrengthPRCard
+            key={lift}
+            lift={lift}
+            entries={entries}
+            selected={selectedLift === lift}
+            unit={unit}
+            onSelect={selectLift}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <PRTrendChart entries={selectedEntries} lift={selectedLift} unit={unit} />
+          </CardContent>
+        </Card>
+
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-white">Recent entries</h3>
+                <p className="mt-1 text-sm text-muted-foreground">History for {selectedLift}.</p>
+              </div>
+              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">{unit}</Badge>
+            </div>
+            {selectedEntries.length ? (
+              <div className="mt-5 space-y-3">
+                {selectedEntries
+                  .slice(-6)
+                  .reverse()
+                  .map((entry) => (
+                    <div key={entry.id} className={cn(insetPanel, "p-4")}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-white">
+                            {entry.oneRepMax} {entry.unit}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">{formatPRDate(entry.date)}</p>
+                        </div>
+                        {entry.id === latest?.id && selectedNewPr ? (
+                          <Badge className="border-primary/20 bg-primary/10 text-primary">New PR</Badge>
+                        ) : entry === allTime ? (
+                          <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">All-time</Badge>
+                        ) : null}
+                      </div>
+                      {entry.notes ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{entry.notes}</p> : null}
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-white/15 bg-white/[0.025] p-6 text-center">
+                <p className="font-semibold text-white">No PR logged yet.</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Save a {selectedLift} entry to start the history.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </ProgressSection>
+  );
+}
+
+function MuscleGroupVolumeAnalytics({ analytics }: { analytics: ProgressAnalytics }) {
+  const maxTarget = Math.max(...analytics.muscleGroups.map((group) => group.targetMax));
+
+  return (
+    <ProgressSection title="Muscle Group Balance" copy="Weekly hard sets by muscle group, compared with useful physique-building target ranges.">
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <Card className={polishedCardHover}>
+          <CardContent className="space-y-3 p-5">
+            {analytics.muscleGroups.map((group) => {
+              const tone = group.status === "High" ? "amber" : group.status === "Low" ? "blue" : "green";
+
+              return (
+                <div key={group.muscleGroup} className={cn(insetPanel, "p-4 transition hover:border-primary/20 hover:bg-white/[0.05]")}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-white">{group.muscleGroup}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Target: {group.targetMin}-{group.targetMax} sets/week
+                      </p>
+                    </div>
+                    <Badge
+                      className={cn(
+                        group.status === "On track" && "border-primary/25 bg-primary/10 text-primary",
+                        group.status === "Low" && "border-accent/25 bg-accent/10 text-accent",
+                        group.status === "High" && "border-amber-300/20 bg-amber-300/10 text-amber-100"
+                      )}
+                    >
+                      {group.status}
+                    </Badge>
+                  </div>
+                  <div className="mt-3">
+                    <MiniBar value={group.sets} max={maxTarget} tone={tone} />
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{group.insight}</p>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 text-primary">
+              <AlertTriangle className="h-5 w-5" />
+              <span className="text-sm font-semibold">Balance checks</span>
+            </div>
+            <div className="mt-5 space-y-3">
+              {analytics.imbalanceInsights.map((insight) => (
+                <div key={insight} className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-muted-foreground transition hover:border-primary/20">
+                  {insight}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </ProgressSection>
+  );
+}
+
+function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: PhysiqueMeasurementEntry[]) => void }) {
+  const [entries, setEntries] = useState<PhysiqueMeasurementEntry[]>([]);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState<PhysiqueFormState>({
+    date: todayKey(),
+    weight: "",
+    waist: "",
+    chest: "",
+    shoulders: "",
+    arms: "",
+    thighs: "",
+    hipsGlutes: "",
+    bodyFat: ""
+  });
+
+  useEffect(() => {
+    const loaded = loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey);
+    setEntries(loaded);
+    onEntriesChange(loaded);
+  }, [onEntriesChange]);
+
+  function updateField(key: keyof PhysiqueFormState, value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function saveEntry() {
+    const entry: PhysiqueMeasurementEntry = {
+      id: createId("physique"),
+      date: form.date || todayKey(),
+      weight: safeNumber(form.weight),
+      waist: safeNumber(form.waist),
+      chest: safeNumber(form.chest),
+      shoulders: safeNumber(form.shoulders),
+      arms: safeNumber(form.arms),
+      thighs: safeNumber(form.thighs),
+      hipsGlutes: safeNumber(form.hipsGlutes),
+      bodyFat: safeNumber(form.bodyFat)
+    };
+    const next = [entry, ...entries].slice(0, 100);
+    setEntries(next);
+    onEntriesChange(next);
+    saveLocalArray(physiqueStorageKey, next);
+    setMessage("Physique metrics saved on this device.");
+  }
+
+  return (
+    <ProgressSection title="Physique Tracker" copy="Log the slow-moving physique markers. This stays local for now and is ready for a database adapter later.">
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-white">Add measurement</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Small updates, clean trendline later.</p>
+              </div>
+              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">Local log</Badge>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="physique-date">Date</Label>
+                <Input id="physique-date" type="date" value={form.date} onChange={(event) => updateField("date", event.target.value)} />
+              </div>
+              {physiqueMetricLabels.map((metric) => (
+                <div key={metric.key} className="grid gap-2">
+                  <Label htmlFor={`physique-${metric.key}`}>{metric.label}</Label>
+                  <Input
+                    id={`physique-${metric.key}`}
+                    type="number"
+                    step="0.1"
+                    placeholder={metric.unit}
+                    value={form[metric.key] ?? ""}
+                    onChange={(event) => updateField(metric.key, event.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+            <Button type="button" className="mt-5 w-full sm:w-auto" onClick={saveEntry}>
+              <Plus className="h-4 w-4" />
+              Save measurement
+            </Button>
+            {message ? <p className="mt-3 text-sm text-primary">{message}</p> : null}
+          </CardContent>
+        </Card>
+
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-white">Latest measurement</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Changes are compared with your previous entry.</p>
+              </div>
+            </div>
+            {entries.length ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {physiqueMetricLabels.map((metric) => {
+                  const data = metricChange(entries, metric.key);
+                  if (!data) return null;
+
+                  return (
+                    <div key={metric.key} className={cn(insetPanel, "p-4 transition hover:border-primary/20 hover:bg-white/[0.05]")}>
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">{metric.label}</p>
+                      <p className="mt-2 text-2xl font-semibold text-white">
+                        {data.latest.toFixed(1)} {metric.unit}
+                      </p>
+                      <p className={cn("mt-1 text-sm", data.change && data.change > 0 ? "text-primary" : "text-muted-foreground")}>
+                        {formatChange(data.change, metric.unit)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-5">
+                <div className="grid place-items-center rounded-2xl border border-dashed border-white/15 bg-white/[0.025] p-8 text-center">
+                  <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                    <Scale className="h-6 w-6" />
+                  </span>
+                  <h4 className="mt-4 font-semibold text-white">No physique entries yet</h4>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                    Add one measurement to start tracking the shape changes that matter.
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </ProgressSection>
+  );
+}
+
+function ProgressPhotos() {
+  return (
+    <ProgressSection title="Progress Photos" copy="Future front, side, and back photo comparisons will live here.">
+      <div className="grid gap-4 md:grid-cols-3">
+        {[
+          ["Front", "Add front photo"],
+          ["Side", "Add side photo"],
+          ["Back", "Add back photo"]
+        ].map(([label, action]) => (
+          <Card key={label} className={polishedCardHover}>
+            <CardContent className="p-5">
+              <div className="grid aspect-[4/5] place-items-center rounded-2xl border border-dashed border-white/15 bg-white/[0.025] transition hover:border-primary/20">
+                <div className="text-center">
+                  <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                    <Camera className="h-6 w-6" />
+                  </span>
+                  <p className="mt-4 font-semibold text-white">{label}</p>
+                  <p className="mt-2 px-4 text-sm leading-6 text-muted-foreground">Progress photo tracking coming soon.</p>
+                </div>
+              </div>
+              <Button type="button" variant="outline" className="mt-4 w-full">
+                {action}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </ProgressSection>
+  );
+}
+
+function RecoveryReadiness({ onScoreChange }: { onScoreChange: (score: number) => void }) {
+  const [entries, setEntries] = useState<RecoveryLogEntry[]>([]);
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState<RecoveryFormState>({
+    date: todayKey(),
+    sleepHours: "7",
+    energy: "7",
+    soreness: "3",
+    stress: "4",
+    workoutRpe: "7"
+  });
+
+  useEffect(() => {
+    const loaded = loadLocalArray<RecoveryLogEntry>(recoveryStorageKey);
+    setEntries(loaded);
+    if (loaded[0]) onScoreChange(loaded[0].score);
+  }, [onScoreChange]);
+
+  const previewScore = calculateRecoveryScore({
+    sleepHours: Number(form.sleepHours) || 0,
+    energy: Number(form.energy) || 0,
+    soreness: Number(form.soreness) || 0,
+    stress: Number(form.stress) || 0,
+    workoutRpe: Number(form.workoutRpe) || 0
+  });
+
+  function updateField(key: keyof RecoveryFormState, value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function saveEntry() {
+    const entry: RecoveryLogEntry = {
+      id: createId("recovery"),
+      date: form.date || todayKey(),
+      sleepHours: Number(form.sleepHours) || 0,
+      energy: Number(form.energy) || 0,
+      soreness: Number(form.soreness) || 0,
+      stress: Number(form.stress) || 0,
+      workoutRpe: Number(form.workoutRpe) || 0,
+      score: previewScore
+    };
+    const next = [entry, ...entries].slice(0, 100);
+    setEntries(next);
+    saveLocalArray(recoveryStorageKey, next);
+    onScoreChange(entry.score);
+    setMessage("Recovery log saved on this device.");
+  }
+
+  return (
+    <ProgressSection title="Recovery & Readiness" copy="Track the inputs that decide whether to push, maintain, or reduce intensity.">
+      <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+        <Card className="border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10 transition hover:border-primary/30">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/15 text-primary">
+                <Moon className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-sm text-muted-foreground">Recovery score</p>
+                <p className="text-3xl font-semibold text-white">{previewScore}/100</p>
+              </div>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-muted-foreground">{recoveryInterpretation(previewScore)}</p>
+            <div className="mt-4">
+              <MiniBar value={previewScore} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={polishedCardHover}>
+          <CardContent className="p-5">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-white">Log readiness</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Use simple signals to keep training dose honest.</p>
+              </div>
+              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">Local log</Badge>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-2">
+                <Label htmlFor="recovery-date">Date</Label>
+                <Input id="recovery-date" type="date" value={form.date} onChange={(event) => updateField("date", event.target.value)} />
+              </div>
+              {[
+                ["sleepHours", "Sleep hours", "0.1", "hours"],
+                ["energy", "Energy", "1", "1-10"],
+                ["soreness", "Soreness", "1", "1-10"],
+                ["stress", "Stress", "1", "1-10"],
+                ["workoutRpe", "Workout difficulty/RPE", "1", "1-10"]
+              ].map(([key, label, step, placeholder]) => (
+                <div key={key} className="grid gap-2">
+                  <Label htmlFor={`recovery-${key}`}>{label}</Label>
+                  <Input
+                    id={`recovery-${key}`}
+                    type="number"
+                    step={step}
+                    min={key === "sleepHours" ? 0 : 1}
+                    max={key === "sleepHours" ? 14 : 10}
+                    placeholder={placeholder}
+                    value={form[key as keyof RecoveryFormState]}
+                    onChange={(event) => updateField(key as keyof RecoveryFormState, event.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+            <Button type="button" className="mt-5 w-full sm:w-auto" onClick={saveEntry}>
+              Save recovery log
+            </Button>
+            {message ? <p className="mt-3 text-sm text-primary">{message}</p> : null}
+          </CardContent>
+        </Card>
+      </div>
+    </ProgressSection>
+  );
+}
+
+function AICoachInsights({
+  analytics,
+  physiqueEntries,
+  recoveryScore
+}: {
+  analytics: ProgressAnalytics;
+  physiqueEntries: PhysiqueMeasurementEntry[];
+  recoveryScore: number;
+}) {
+  const physiqueInsight = useMemo(() => {
+    const waist = metricChange(physiqueEntries, "waist");
+    const weight = metricChange(physiqueEntries, "weight");
+
+    if (waist?.change !== null && waist?.change !== undefined && waist.change < 0) {
+      return "Waist is trending down. If strength holds steady, that is a strong recomposition signal.";
+    }
+    if (weight?.change !== null && weight?.change !== undefined && weight.change > 0) {
+      return "Body weight is moving up. Watch waist and performance together to confirm quality gain.";
+    }
+    return "Log a few physique measurements to unlock trend-based physique insights.";
+  }, [physiqueEntries]);
+  const recoveryInsight =
+    recoveryScore < 60
+      ? "Recovery is lower than usual. Consider reducing intensity today."
+      : "Recovery is good enough to keep the plan moving.";
+  const insights = [physiqueInsight, recoveryInsight, ...analytics.coachInsights].filter(Boolean).slice(0, 6);
+
+  return (
+    <ProgressSection title="AI Coach Insights" copy="Rule-based for now, structured so future AI summaries can replace this layer.">
+      <Card className="border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10 transition hover:border-primary/30">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-2 text-primary">
+            <Sparkles className="h-5 w-5" />
+            <span className="text-sm font-semibold">Coach read</span>
+          </div>
+          <div className="mt-5 grid gap-3">
+            {insights.map((insight, index) => (
+              <div key={insight} className="flex gap-3 rounded-2xl border border-white/10 bg-black/25 p-4 text-sm leading-6 text-muted-foreground transition hover:border-primary/20">
+                <span className="mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-primary/25 bg-primary/10 text-[10px] font-semibold text-primary">
+                  {index + 1}
+                </span>
+                {insight}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </ProgressSection>
+  );
+}
+
+export function ProgressAnalyticsCenter({ analytics, userId }: { analytics: ProgressAnalytics; userId?: string | null }) {
+  const initialRecoveryScore = Number.parseInt(analytics.overview.recoveryScore, 10) || 72;
+  const [recoveryScore, setRecoveryScore] = useState(initialRecoveryScore);
+  const [physiqueEntries, setPhysiqueEntries] = useState<PhysiqueMeasurementEntry[]>([]);
+
+  useEffect(() => {
+    setPhysiqueEntries(loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey));
+  }, []);
+
+  return (
+    <div className="space-y-10 sm:space-y-12">
+      <ProgressTrajectoryCard analytics={analytics} recoveryScore={recoveryScore} />
+      {!analytics.hasRealWorkoutData || !analytics.hasRealLoadData ? (
+        <Card className="border-white/10 bg-white/[0.035]">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">Some signals are in preview mode.</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Complete workouts to replace consistency demos. Set-weight tracking will replace demo strength and volume estimates later.
+              </p>
+            </div>
+            <Badge className="w-fit border-primary/20 bg-primary/10 text-primary">Future-ready data layer</Badge>
+          </CardContent>
+        </Card>
+      ) : null}
+      <OverviewCards analytics={analytics} recoveryScore={recoveryScore} />
+      <ConsistencyAnalytics analytics={analytics} />
+      <StrengthProgressAnalytics analytics={analytics} userId={userId} />
+      <MuscleGroupVolumeAnalytics analytics={analytics} />
+      <PhysiqueTracker onEntriesChange={setPhysiqueEntries} />
+      <ProgressPhotos />
+      <RecoveryReadiness onScoreChange={setRecoveryScore} />
+      <AICoachInsights analytics={analytics} physiqueEntries={physiqueEntries} recoveryScore={recoveryScore} />
+    </div>
+  );
+}

@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/workout", label: "Today", icon: Dumbbell },
+  { href: "/progress", label: "Progress", icon: BarChart3 },
   { href: "/form-coach", label: "Form Coach", icon: Video, proOnly: true },
   { href: "/recovery", label: "Recovery", icon: RotateCcw },
   { href: "/weak-points", label: "Weak points", icon: Target },
