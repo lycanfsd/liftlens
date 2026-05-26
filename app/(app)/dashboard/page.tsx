@@ -1,10 +1,11 @@
-import { Activity, CalendarCheck2, ChevronRight, Gauge, Lock, RotateCcw, ShieldCheck, Sparkles, Video } from "lucide-react";
+import { Activity, CalendarCheck2, ChevronDown, ChevronRight, Gauge, Lock, PlayCircle, RotateCcw, ShieldCheck, Sparkles, Video } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { DailyCoachMessage } from "@/components/daily-coach-message";
 import { EmptyState } from "@/components/empty-state";
 import { MomentumCard, WeeklyRecapCard } from "@/components/momentum-system";
 import { PageHeader } from "@/components/page-header";
-import { ProgressRing } from "@/components/progress-ring";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,29 @@ type DashboardData = {
   momentum: MomentumSystem;
 };
 
+function DetailSection({
+  title,
+  icon: Icon,
+  children
+}: {
+  title: string;
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <details className="group rounded-2xl border border-white/10 bg-white/[0.035]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.04]">
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-primary" />
+          {title}
+        </span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground transition group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-white/10 p-4">{children}</div>
+    </details>
+  );
+}
+
 function demoMomentumLogs(): MomentumLog[] {
   const now = Date.now();
   return [0, 2, 4, 7, 10, 14, 18, 22, 25].map((daysAgo, index) => ({
@@ -38,6 +62,27 @@ function demoMomentumLogs(): MomentumLog[] {
     energy: index % 4 === 0 ? 3 : 4,
     soreness: index % 5 === 0 ? 3 : 2
   }));
+}
+
+function dashboardIntensity(data: DashboardData) {
+  if (data.momentum.reentryMode) return "Re-entry";
+  if (data.momentum.recoveryMode || data.momentum.protectionMode) return "Light";
+  if (data.readinessScore >= 78) return "Hard";
+  return "Moderate";
+}
+
+function dashboardDuration(data: DashboardData) {
+  if (data.momentum.protectionMode || data.momentum.reentryMode) return "20-30 min";
+  if (data.readinessScore >= 78) return "35-50 min";
+  return "25-40 min";
+}
+
+function dashboardWhy(data: DashboardData) {
+  if (data.momentum.reentryMode) return "Re-entry session to keep the system moving.";
+  if (data.momentum.recoveryMode) return "Volume reduced to protect recovery.";
+  if (data.momentum.protectionMode) return "Friction reduced to preserve momentum.";
+  if (data.readinessScore >= 78) return "Readiness supports a useful push.";
+  return "Progress maintained with a repeatable dose.";
 }
 
 function buildStats(rows: { completed_at: string; energy?: number | null }[], momentum: MomentumSystem): DashboardStat[] {
@@ -187,172 +232,202 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         eyebrow="Daily operating brief"
-        title="Protect momentum, then build fitness."
-        copy="LiftLens tracks consistency like a coaching system. Missed days become programming context, not failure."
+        title="Today, keep the system moving."
+        copy="A calm plan for the day you actually have. Details are there when you want them."
       >
         <Button asChild>
-          <a href="/workout">Generate workout</a>
+          <a href="/workout">Start workout</a>
         </Button>
       </PageHeader>
 
-      <DailyCoachMessage />
-
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <MomentumCard momentum={data.momentum} />
-        <WeeklyRecapCard recap={data.momentum.weeklyRecap} />
-      </section>
-
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="overflow-hidden border-primary/25 bg-gradient-to-br from-primary/14 via-white/[0.055] to-accent/10">
+      <section className="mt-6">
+        <Card className="overflow-hidden border-white/10 bg-gradient-to-br from-white/[0.075] via-white/[0.04] to-accent/10">
           <CardContent className="p-5 sm:p-6">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid gap-6 lg:grid-cols-[1fr_280px] lg:items-center">
               <div>
-                <div className="flex items-center gap-2 text-primary">
-                  <Gauge className="h-5 w-5" />
-                  <span className="text-sm font-semibold">Readiness brief</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="border-primary/20 bg-primary/10 text-primary">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {data.momentum.state}
+                  </Badge>
+                  <Badge>{data.momentum.score}/100 momentum</Badge>
                 </div>
-                <h2 className="mt-4 max-w-xl text-3xl font-semibold text-white">{data.readinessTitle}</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{data.nextBestAction}</p>
+                <h2 className="mt-4 max-w-2xl text-3xl font-semibold text-white">{data.readinessTitle}</h2>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{dashboardWhy(data)}</p>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <Button asChild size="lg" className="w-full sm:w-auto">
+                    <a href="/workout">
+                      <PlayCircle className="h-4 w-4" />
+                      Start workout
+                    </a>
+                  </Button>
+                  <span className="text-xs font-medium text-muted-foreground">You do not need a perfect day to make progress.</span>
+                </div>
               </div>
-              <ProgressRing value={data.readinessScore} label="fit score" className="shrink-0" />
-            </div>
-
-            <div className="mt-6 grid gap-3 md:grid-cols-3">
-              {[
-                ["Today's intensity", data.momentum.protectionMode ? "Friction reduced" : data.readinessScore > 75 ? "Push steady" : "Trim volume"],
-                ["Friction rule", data.momentum.protectionMode ? "Shorter, simpler, startable" : "Pick the plan you can start"],
-                ["Recovery guardrail", data.momentum.recoveryMode ? "Recovery Momentum active" : "Leave one clean rep in reserve"]
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
-                  <p className="mt-2 font-semibold text-white">{value}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Do today</p>
+                  <p className="mt-2 font-semibold text-white">Adaptive lift</p>
                 </div>
-              ))}
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Time</p>
+                  <p className="mt-2 font-semibold text-white">{dashboardDuration(data)}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Intensity</p>
+                  <p className="mt-2 font-semibold text-white">{dashboardIntensity(data)}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Focus</p>
+                  <p className="mt-2 font-semibold text-white">Momentum</p>
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5 sm:p-6">
-            <div className="flex items-center gap-2 text-primary">
-              <Sparkles className="h-5 w-5" />
-              <span className="text-sm font-semibold">Coaching insight</span>
-            </div>
-            <h2 className="mt-4 text-2xl font-semibold text-white">The product is protecting consistency.</h2>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{data.insight}</p>
-            <Button asChild className="mt-5 w-full justify-between">
-              <a href="/workout">
-                Adapt today&apos;s workout
-                <ChevronRight className="h-4 w-4" />
-              </a>
-            </Button>
           </CardContent>
         </Card>
       </section>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {data.stats.map((stat, index) => (
-          <StatCard
-            key={stat.label}
-            {...stat}
-            icon={icons[index]}
-            accent={index % 2 === 0 ? "green" : "blue"}
-          />
-        ))}
+      <div className="mt-6">
+        <DailyCoachMessage />
       </div>
 
-      <Card className="mt-6 border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10">
-        <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div className="flex gap-4">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary">
-              <Video className="h-6 w-6" />
-            </span>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-sm font-semibold text-primary">New coaching surface</p>
-                {!hasFormCoachAccess ? (
-                  <Badge className="border-primary/25 bg-primary/10 text-primary">
-                    <Lock className="mr-1 h-3 w-3" />
-                    Pro
-                  </Badge>
-                ) : null}
-              </div>
-              <h2 className="mt-2 text-2xl font-semibold text-white">AI Form Coach</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                {hasFormCoachAccess
-                  ? "Upload a short lifting video and get safety-first cues before your next set."
-                  : "Upgrade to Pro to upload lifting videos, get form feedback, and build form check history."}
-              </p>
-            </div>
-          </div>
-          <Button asChild className="w-full sm:w-auto">
-            <a href={hasFormCoachAccess ? "/form-coach" : "/pricing"}>
-              {hasFormCoachAccess ? "Open Form Coach" : "Upgrade to Pro"}
-              <ChevronRight className="h-4 w-4" />
-            </a>
-          </Button>
-        </CardContent>
-      </Card>
-
-      <section className="mt-6 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <Card>
-          <CardContent className="p-5 sm:p-6">
-            <h2 className="text-xl font-semibold text-white">Most trained muscle groups</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              This should feel like a coaching signal, not a chart dumped into the app.
-            </p>
-            {data.mostTrained.length > 0 ? (
-              <div className="mt-5 space-y-3">
-                {data.mostTrained.map((focus, index) => (
-                  <div key={focus} className="flex items-center gap-3 rounded-2xl bg-white/[0.045] p-3">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-sm font-semibold text-white">
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-white">{focus}</p>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${92 - index * 22}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-5">
-                <EmptyState
-                  icon={Activity}
-                  title="No muscle group data yet"
-                  copy="Save a completed workout and FlexFit will start building your training profile."
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-5 sm:p-6">
-            <h2 className="text-xl font-semibold text-white">This week&apos;s operating system</h2>
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {[
-                ["Must do", "2 sessions", "Protect these even if they become 20-minute workouts."],
-                ["Flexible", "1-2 sessions", "Use the adaptive builder when schedule or soreness changes."],
-                ["Recovery", "Daily check", "Do not make up missed workouts with punishment volume."]
-              ].map(([label, value, copy]) => (
-                <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
-                  <p className="mt-2 text-lg font-semibold text-white">{value}</p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy}</p>
+      <section className="mt-6 grid gap-3">
+        <DetailSection title="Why did the plan change?" icon={Sparkles}>
+          <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+            <Card>
+              <CardContent className="p-5">
+                <div className="flex items-center gap-2 text-primary">
+                  <Sparkles className="h-5 w-5" />
+                  <span className="text-sm font-semibold">Coach read</span>
                 </div>
-              ))}
-            </div>
-            <div className="mt-5 rounded-2xl border border-primary/20 bg-primary/10 p-4">
-              <p className="text-sm font-semibold text-primary">Low energy does not mean no progress.</p>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                On rough days, FlexFit trims volume and keeps the habit alive. That is still training.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+                <h2 className="mt-4 text-2xl font-semibold text-white">This keeps your momentum alive.</h2>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{data.insight}</p>
+                <Button asChild className="mt-5 w-full justify-between">
+                  <a href="/workout">
+                    Adapt today&apos;s workout
+                    <ChevronRight className="h-4 w-4" />
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+            <MomentumCard momentum={data.momentum} />
+          </div>
+        </DetailSection>
+
+        <DetailSection title="Weekly recap" icon={RotateCcw}>
+          <WeeklyRecapCard recap={data.momentum.weeklyRecap} />
+        </DetailSection>
+
+        <DetailSection title="Progress details" icon={Activity}>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {data.stats.map((stat, index) => (
+              <StatCard
+                key={stat.label}
+                {...stat}
+                icon={icons[index]}
+                accent={index % 2 === 0 ? "green" : "blue"}
+              />
+            ))}
+          </div>
+        </DetailSection>
+
+        <DetailSection title="Training patterns" icon={Gauge}>
+          <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <h2 className="text-xl font-semibold text-white">Most trained muscle groups</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  A useful signal for balancing future sessions.
+                </p>
+                {data.mostTrained.length > 0 ? (
+                  <div className="mt-5 space-y-3">
+                    {data.mostTrained.map((focus, index) => (
+                      <div key={focus} className="flex items-center gap-3 rounded-2xl bg-white/[0.045] p-3">
+                        <span className="grid h-9 w-9 place-items-center rounded-xl bg-white/10 text-sm font-semibold text-white">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-white">{focus}</p>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-primary" style={{ width: `${92 - index * 22}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    <EmptyState
+                      icon={Activity}
+                      title="No muscle group data yet"
+                      copy="Save a completed workout and LiftLens will start building your training profile."
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-5 sm:p-6">
+                <h2 className="text-xl font-semibold text-white">This week&apos;s operating system</h2>
+                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                  {[
+                    ["Must do", "2 sessions", "Protect these even if they become 20-minute workouts."],
+                    ["Flexible", "1-2 sessions", "Use the adaptive builder when schedule or soreness changes."],
+                    ["Recovery", "Daily check", "Do not make up missed workouts with punishment volume."]
+                  ].map(([label, value, copy]) => (
+                    <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+                      <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-sm font-semibold text-white">Short session. Still counts.</p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    On rough days, LiftLens trims volume and keeps the habit alive. That is still training.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+        </DetailSection>
+
+        <DetailSection title="More tools" icon={Video}>
+          <Card className="border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10">
+            <CardContent className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div className="flex gap-4">
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary/15 text-primary">
+                  <Video className="h-6 w-6" />
+                </span>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-primary">Form feedback</p>
+                    {!hasFormCoachAccess ? (
+                      <Badge className="border-primary/25 bg-primary/10 text-primary">
+                        <Lock className="mr-1 h-3 w-3" />
+                        Pro
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">AI Form Coach</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    {hasFormCoachAccess
+                      ? "Upload a short lifting video and get safety-first cues before your next set."
+                      : "Upgrade to Pro to upload lifting videos, get form feedback, and build form check history."}
+                  </p>
+                </div>
+              </div>
+              <Button asChild className="w-full sm:w-auto">
+                <a href={hasFormCoachAccess ? "/form-coach" : "/pricing"}>
+                  {hasFormCoachAccess ? "Open Form Coach" : "Upgrade to Pro"}
+                  <ChevronRight className="h-4 w-4" />
+                </a>
+              </Button>
+            </CardContent>
+          </Card>
+        </DetailSection>
       </section>
     </>
   );

@@ -192,6 +192,23 @@ export type GeneratedWorkout = {
   condensed: string[];
 };
 
+export type DailyWorkoutStatus = "planned" | "started" | "completed" | "skipped";
+
+export type DailyWorkoutRecord = {
+  id: string;
+  userId: string | null;
+  workoutDate: string;
+  inputSnapshot: DailyCheckIn;
+  workout: GeneratedWorkout;
+  readinessScore: number | null;
+  trainingDose: string | null;
+  title: string;
+  status: DailyWorkoutStatus;
+  version: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 export type RecoveryWindow = "1-day" | "2-3-days" | "1-week-plus";
 
 export type RecoveryPlan = {

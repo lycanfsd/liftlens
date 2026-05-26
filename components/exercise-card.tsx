@@ -1,6 +1,5 @@
 import { ChevronDown, Gauge, Link2, Repeat2, ShieldAlert } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import type { ExercisePrescription } from "@/lib/types";
 
 type ExercisePill = {
@@ -119,12 +118,10 @@ export function ExerciseCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="font-semibold text-white">{exercise.name}</h4>
-            <Badge>{exercise.muscleGroup}</Badge>
-            {exercise.movementPattern ? <Badge>{exercise.movementPattern}</Badge> : null}
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{exercise.cue}</p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
             <div className="rounded-xl bg-white/[0.05] p-2">
               <div className="text-muted-foreground">Sets</div>
               <div className="mt-1 font-semibold text-white">{exercise.sets}</div>
@@ -137,21 +134,28 @@ export function ExerciseCard({
               <div className="text-muted-foreground">Rest</div>
               <div className="mt-1 font-semibold text-white">{exercise.rest}</div>
             </div>
-            <div className="rounded-xl bg-white/[0.05] p-2">
-              <div className="flex items-center gap-1 text-muted-foreground">
-                <Gauge className="h-3 w-3 text-primary" />
-                Effort
-              </div>
-              <div className="mt-1 font-semibold text-white">{repsInReserveLabel(exercise.targetRir, exercise.targetRpe)}</div>
-            </div>
           </div>
 
           <details open={advanced} className="group mt-3 rounded-xl border border-white/10 bg-black/20">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-muted-foreground transition hover:text-white">
-              Details
+              Why?
               <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
             </summary>
             <div className="space-y-3 border-t border-white/10 p-3">
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 font-semibold text-muted-foreground">
+                  {exercise.muscleGroup}
+                </span>
+                {exercise.movementPattern ? (
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 font-semibold text-muted-foreground">
+                    {exercise.movementPattern}
+                  </span>
+                ) : null}
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 font-semibold text-muted-foreground">
+                  <Gauge className="h-3 w-3 text-primary" />
+                  {repsInReserveLabel(exercise.targetRir, exercise.targetRpe)}
+                </span>
+              </div>
               {insights.length ? <ExercisePills pills={insights} /> : null}
 
               {exercise.supersetWith ? (

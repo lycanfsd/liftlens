@@ -6,7 +6,12 @@ import { z } from "zod";
 
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { DailyCheckIn, GeneratedWorkout } from "@/lib/types";
+import type { DailyCheckIn, DailyWorkoutRecord, DailyWorkoutStatus, GeneratedWorkout } from "@/lib/types";
+import {
+  getCurrentUserTodayDailyWorkoutResult,
+  saveTodayDailyWorkoutForUser,
+  updateTodayDailyWorkoutStatusForUser
+} from "@/lib/workout/daily-workouts";
 import { generateAdaptiveWorkout, type WorkoutEngineContext } from "@/lib/workout/generator";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -20,6 +25,21 @@ export type ActionResult = {
 export type WorkoutExplanationResult = {
   summary: string;
   source: "fake" | "openai" | "fallback";
+};
+
+export type GenerateAdaptiveWorkoutOptions = {
+  persistDaily?: boolean;
+  overwriteExisting?: boolean;
+};
+
+export type GenerateAdaptiveWorkoutResult = {
+  workout: GeneratedWorkout;
+  message: string;
+  dailyWorkout?: DailyWorkoutRecord | null;
+  blockedByExisting?: boolean;
+  debugMessage?: string;
+  userId?: string | null;
+  workoutDate?: string;
 };
 
 export type ProfileActionState = {
@@ -256,20 +276,160 @@ export async function enhanceWorkoutExplanationAction(
 
 export async function generateAdaptiveWorkoutAction(
   input: DailyCheckIn,
-  context?: Partial<WorkoutEngineContext>
-): Promise<{ workout: GeneratedWorkout; message: string }> {
+  context?: Partial<WorkoutEngineContext>,
+  options: GenerateAdaptiveWorkoutOptions = {}
+): Promise<GenerateAdaptiveWorkoutResult> {
   const workout = generateAdaptiveWorkout(input, context);
   const explanation = await enhanceWorkoutExplanationAction(workout);
+  const enhancedWorkout: GeneratedWorkout = {
+    ...workout,
+    aiSummary: {
+      text: explanation.summary,
+      source: explanation.source
+    }
+  };
+
+  if (options.persistDaily === false) {
+    return {
+      workout: enhancedWorkout,
+      message: "Server engine generated today's adaptive training dose."
+    };
+  }
+
+  if (!isSupabaseConfigured) {
+    return {
+      workout: enhancedWorkout,
+      message: "Generated in demo mode. Connect Supabase to keep today's workout after refresh."
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      workout: enhancedWorkout,
+      message: "Workout generated. Log in to keep it saved for today."
+    };
+  }
+
+  const dailyResult = await saveTodayDailyWorkoutForUser({
+    supabase,
+    userId: user.id,
+    input,
+    workout: enhancedWorkout,
+    overwriteExisting: options.overwriteExisting ?? false
+  });
+
+  if (dailyResult.blockedByExisting && dailyResult.record) {
+    return {
+      workout: dailyResult.record.workout,
+      dailyWorkout: dailyResult.record,
+      blockedByExisting: true,
+      message: "Today's workout is already saved. Keep it, edit inputs, or regenerate when you mean to replace it.",
+      debugMessage: dailyResult.debugMessage,
+      userId: dailyResult.userId,
+      workoutDate: dailyResult.workoutDate
+    };
+  }
+
+  if (dailyResult.error) {
+    return {
+      workout: enhancedWorkout,
+      dailyWorkout: dailyResult.record,
+      message: `Workout generated, but today's save did not finish: ${dailyResult.error}`,
+      debugMessage: dailyResult.debugMessage ?? `Save failed: ${dailyResult.error}`,
+      userId: dailyResult.userId,
+      workoutDate: dailyResult.workoutDate
+    };
+  }
+
+  revalidatePath("/workout");
+  revalidatePath("/dashboard");
 
   return {
-    workout: {
-      ...workout,
-      aiSummary: {
-        text: explanation.summary,
-        source: explanation.source
-      }
-    },
-    message: "Server engine generated today's adaptive training dose."
+    workout: dailyResult.record?.workout ?? enhancedWorkout,
+    dailyWorkout: dailyResult.record,
+    message: dailyResult.record && dailyResult.record.version > 1
+      ? "Workout updated based on your new inputs."
+      : "Workout saved for today.",
+    debugMessage: dailyResult.debugMessage,
+    userId: dailyResult.userId,
+    workoutDate: dailyResult.workoutDate
+  };
+}
+
+export async function loadTodayDailyWorkoutAction(): Promise<{
+  dailyWorkout: DailyWorkoutRecord | null;
+  debugMessage: string;
+  error?: string;
+  userId: string | null;
+  workoutDate: string;
+}> {
+  const result = await getCurrentUserTodayDailyWorkoutResult();
+  return {
+    dailyWorkout: result.record,
+    debugMessage: result.debugMessage,
+    error: result.error,
+    userId: result.userId,
+    workoutDate: result.workoutDate
+  };
+}
+
+const dailyWorkoutStatusSchema = z.enum(["planned", "started", "completed", "skipped"]);
+
+export async function updateDailyWorkoutStatusAction(
+  status: DailyWorkoutStatus,
+  workoutId?: string | null
+): Promise<{ ok: boolean; message: string; dailyWorkout?: DailyWorkoutRecord | null; debugMessage?: string }> {
+  const parsed = dailyWorkoutStatusSchema.safeParse(status);
+
+  if (!parsed.success) {
+    return { ok: false, message: "That workout status is not supported yet." };
+  }
+
+  if (!isSupabaseConfigured) {
+    return { ok: true, message: `Demo mode: workout marked ${parsed.data}.` };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Log in again to update this workout." };
+  }
+
+  const result = await updateTodayDailyWorkoutStatusForUser({
+    supabase,
+    userId: user.id,
+    status: parsed.data,
+    workoutId
+  });
+
+  if (result.error) {
+    return { ok: false, message: result.error, debugMessage: result.debugMessage ?? `Save failed: ${result.error}` };
+  }
+
+  revalidatePath("/workout");
+  revalidatePath("/dashboard");
+  revalidatePath("/history");
+
+  const labels: Record<DailyWorkoutStatus, string> = {
+    planned: "Workout moved back to planned.",
+    started: "Workout started. Keep the first set clean.",
+    completed: "Workout completed. Momentum protected.",
+    skipped: "Workout skipped without guilt. The next plan will adapt."
+  };
+
+  return {
+    ok: true,
+    message: labels[parsed.data],
+    dailyWorkout: result.record,
+    debugMessage: result.debugMessage
   };
 }
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   Activity,
   BatteryMedium,
   Bed,
   Brain,
+  ChevronDown,
   Clock3,
   MapPin,
   RotateCcw,
@@ -15,7 +16,11 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { generateAdaptiveWorkoutAction, saveWorkoutAction } from "@/app/app-actions";
+import {
+  generateAdaptiveWorkoutAction,
+  saveWorkoutAction,
+  updateDailyWorkoutStatusAction
+} from "@/app/app-actions";
 import { WorkoutCard, type WorkoutViewMode } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,6 +39,7 @@ import {
 import type {
   BodyFocus,
   DailyCheckIn,
+  DailyWorkoutRecord,
   DiscomfortArea,
   EquipmentAccess,
   GeneratedWorkout,
@@ -43,6 +49,7 @@ import type {
   ProgramPhase,
   WeakPoint
 } from "@/lib/types";
+import { isLocalDailyWorkout, useDailyWorkoutPersistence } from "@/hooks/use-daily-workout-persistence";
 import { generateWorkout, type WorkoutEngineContext } from "@/lib/workout/generator";
 import { cn } from "@/lib/utils";
 
@@ -283,11 +290,49 @@ function InjuryAreaButtons({
   );
 }
 
-export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<WorkoutEngineContext> }) {
-  const [input, setInput] = useState<DailyCheckIn>(defaultInput);
-  const [workout, setWorkout] = useState<GeneratedWorkout>(() => generateWorkout(defaultInput, engineContext));
-  const [message, setMessage] = useState("Generated from a balanced default day. Adjust signals when life changes.");
+function StepLabel({ step, title, copy }: { step: number; title: string; copy?: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full border border-primary/25 bg-primary/10 text-xs font-semibold text-primary">
+        {step}
+      </span>
+      <div>
+        <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {copy ? <p className="mt-1 text-sm text-muted-foreground">{copy}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+export function WorkoutGenerator({
+  engineContext,
+  initialDailyWorkout,
+  currentUserId
+}: {
+  engineContext?: Partial<WorkoutEngineContext>;
+  initialDailyWorkout?: DailyWorkoutRecord | null;
+  currentUserId?: string | null;
+}) {
+  const initialInput = initialDailyWorkout?.inputSnapshot ?? defaultInput;
+  const {
+    dailyWorkout,
+    source: persistenceSource,
+    setDailyWorkout,
+    saveLocalFallback,
+    updateLocalStatus
+  } = useDailyWorkoutPersistence({
+    initialDailyWorkout,
+    currentUserId
+  });
+  const [input, setInput] = useState<DailyCheckIn>(initialInput);
+  const [workout, setWorkout] = useState<GeneratedWorkout>(() => initialDailyWorkout?.workout ?? generateWorkout(initialInput, engineContext));
+  const [message, setMessage] = useState(
+    initialDailyWorkout ? "Today's workout loaded." : "Check in once. LiftLens will save today's plan after generation."
+  );
   const [viewMode, setViewMode] = useState<WorkoutViewMode>("simple");
+  const [hasGenerated, setHasGenerated] = useState(Boolean(initialDailyWorkout));
+  const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkout);
+  const [showRegenerateOptions, setShowRegenerateOptions] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const fitScore = useMemo(() => {
@@ -303,6 +348,16 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
     if (input.energy >= 4 && input.timeAvailable >= 40) return "Productive push";
     return "Science-based steady dose";
   }, [input]);
+
+  useEffect(() => {
+    if (!dailyWorkout) return;
+
+    setInput(dailyWorkout.inputSnapshot);
+    setWorkout(dailyWorkout.workout);
+    setHasGenerated(true);
+    setIsEditingInputs(false);
+    setMessage(persistenceSource === "local" ? "Today's workout loaded from this browser." : "Today's workout loaded.");
+  }, [dailyWorkout, persistenceSource]);
 
   function updateInput<T extends keyof DailyCheckIn>(key: T, value: DailyCheckIn[T]) {
     setInput((current) => ({ ...current, [key]: value }));
@@ -342,288 +397,466 @@ export function WorkoutGenerator({ engineContext }: { engineContext?: Partial<Wo
     setInput(nextInput);
     const nextWorkout = generateWorkout(nextInput, engineContext);
     setWorkout(nextWorkout);
-    setMessage("Reality applied. The workout changed before your motivation had to negotiate.");
+    setMessage("Scenario applied. Update today's workout when the inputs look right.");
   }
 
-  function generate() {
+  function resetInput() {
+    const resetTo = dailyWorkout?.inputSnapshot ?? defaultInput;
+    setInput(resetTo);
+    setWorkout(dailyWorkout?.workout ?? generateWorkout(resetTo, engineContext));
+    setHasGenerated(Boolean(dailyWorkout));
+    setMessage("Balanced check-in restored. Generate when you are ready.");
+  }
+
+  function generate(overwriteExisting = Boolean(dailyWorkout)) {
     const next = generateWorkout(input, engineContext);
     setWorkout(next);
+    setHasGenerated(true);
+    setShowRegenerateOptions(false);
     setMessage("Building the server-side training dose from today's inputs.");
 
     startTransition(async () => {
-      const result = await generateAdaptiveWorkoutAction(input, engineContext);
-      setWorkout(result.workout);
-      setMessage(result.message);
+      try {
+        const result = await generateAdaptiveWorkoutAction(input, engineContext, {
+          overwriteExisting
+        });
+        setWorkout(result.workout);
+        if (result.dailyWorkout) {
+          setDailyWorkout(result.dailyWorkout, "backend");
+        } else {
+          saveLocalFallback(result.workout, input);
+        }
+        setHasGenerated(true);
+        setIsEditingInputs(false);
+        setMessage(result.message);
+      } catch {
+        setWorkout(next);
+        saveLocalFallback(next, input);
+        setMessage("We used the local coach engine. The server pass did not finish, but your workout is ready.");
+      }
     });
   }
 
-  function save() {
+  function startWorkout() {
     startTransition(async () => {
-      const result = await saveWorkoutAction(workout, input);
-      setMessage(result.message);
+      try {
+        if (isLocalDailyWorkout(dailyWorkout)) {
+          updateLocalStatus("started");
+          setMessage("Workout started.");
+          document.getElementById("workout-main")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+
+        const result = await updateDailyWorkoutStatusAction("started", dailyWorkout?.id);
+        if (result.dailyWorkout) setDailyWorkout(result.dailyWorkout, "backend");
+        setMessage(result.message);
+        document.getElementById("workout-main")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {
+        setMessage("We could not mark that started yet. The plan is still ready.");
+      }
     });
   }
+
+  function completeWorkout() {
+    startTransition(async () => {
+      try {
+        if (isLocalDailyWorkout(dailyWorkout)) {
+          updateLocalStatus("completed");
+          setMessage("Workout completed. Momentum protected.");
+          return;
+        }
+
+        const statusResult = await updateDailyWorkoutStatusAction("completed", dailyWorkout?.id);
+        if (!statusResult.ok) {
+          setMessage(statusResult.message);
+          return;
+        }
+        if (statusResult.dailyWorkout) setDailyWorkout(statusResult.dailyWorkout, "backend");
+
+        const saveResult = await saveWorkoutAction(workout, input);
+        setMessage(saveResult.ok ? "Workout completed. Momentum protected." : saveResult.message);
+      } catch {
+        setMessage("We could not complete that yet. Your workout is still here, and you can try again in a moment.");
+      }
+    });
+  }
+
+  const showCheckIn = !hasGenerated || isEditingInputs;
+  const generateCopy = dailyWorkout ? "Update today's workout" : "Generate workout";
+  const loadedStatusCopy =
+    dailyWorkout?.status === "completed"
+      ? "Completed"
+      : dailyWorkout?.status === "started"
+        ? "Started"
+        : dailyWorkout?.status === "skipped"
+          ? "Skipped"
+          : "Planned";
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
-      <section className="space-y-4 xl:sticky xl:top-8 xl:h-fit">
-        <Card className="overflow-hidden border-primary/25 bg-gradient-to-br from-primary/12 via-white/[0.05] to-accent/10">
-          <CardContent className="p-5">
-            <div className="flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-6xl space-y-6">
+      {dailyWorkout && !showCheckIn ? (
+        <Card className="border-primary/20 bg-primary/10">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <div className="flex items-center gap-2 text-primary">
-                  <WandSparkles className="h-5 w-5" />
-                  <span className="text-sm font-semibold">Training engine</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                    Today&apos;s workout loaded
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-black/25 px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    {loadedStatusCopy}
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-black/25 px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    Version {dailyWorkout.version}
+                  </span>
                 </div>
-                <h2 className="mt-3 text-2xl font-semibold text-white">{coachRead}</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Deterministic logic first: goal, recovery, volume, RIR, equipment, and fatigue.
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  This plan is saved for {dailyWorkout.workoutDate}. Refresh or leave the page and it will still be here.
                 </p>
-                {engineContext?.momentumProtectionMode ? (
-                  <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-3">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-100">
-                      <ShieldAlert className="h-4 w-4" />
-                      Momentum Protection Mode
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setInput(dailyWorkout.inputSnapshot);
+                    setIsEditingInputs(true);
+                    setShowRegenerateOptions(false);
+                    setMessage("Editing today's saved inputs.");
+                  }}
+                >
+                  Edit today&apos;s inputs
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setShowRegenerateOptions(true)}>
+                  Regenerate workout
+                </Button>
+              </div>
+            </div>
+
+            {showRegenerateOptions ? (
+              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                <p className="text-sm font-semibold text-white">Replace today&apos;s saved workout?</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Regeneration keeps your current inputs and saves a new version. Use edit if the day changed.
+                </p>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" variant="ghost" onClick={() => setShowRegenerateOptions(false)}>
+                    Keep current workout
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setInput(dailyWorkout.inputSnapshot);
+                      setIsEditingInputs(true);
+                      setShowRegenerateOptions(false);
+                    }}
+                  >
+                    Edit inputs and update
+                  </Button>
+                  <Button type="button" onClick={() => generate(true)} disabled={isPending}>
+                    {isPending ? "Regenerating..." : "Regenerate workout"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showCheckIn ? (
+        <>
+          <section className="space-y-3">
+            <StepLabel
+              step={1}
+              title="Today's check-in"
+              copy={dailyWorkout ? "Update only what changed. The saved workout will be replaced intentionally." : "Set the big signals first. Fine-tune only if the day needs it."}
+            />
+            <Card className="border-white/10 bg-white/[0.04]">
+              <CardContent className="space-y-5 p-5">
+                <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Clock3 className="h-4 w-4 text-primary" />
+                        <Label htmlFor="timeAvailable">Time available</Label>
+                      </div>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-white">
+                        {input.timeAvailable} min
+                      </span>
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                      Recent adherence or recovery friction increased, so today&apos;s workout is built to be shorter,
-                      simpler, and easier to start.
+                    <Input
+                      id="timeAvailable"
+                      type="number"
+                      min={10}
+                      max={90}
+                      value={input.timeAvailable}
+                      onChange={(event) => updateInput("timeAvailable", Number(event.target.value))}
+                    />
+                    <input
+                      type="range"
+                      min={10}
+                      max={90}
+                      value={input.timeAvailable}
+                      onChange={(event) => updateInput("timeAvailable", Number(event.target.value))}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+
+                  <SignalSlider
+                    icon={BatteryMedium}
+                    label="Energy"
+                    value={input.energy}
+                    tone="green"
+                    onChange={(value) => updateInput("energy", value)}
+                  />
+
+                  <SignalSlider
+                    icon={Activity}
+                    label="Soreness"
+                    value={input.soreness}
+                    tone="blue"
+                    onChange={updateGlobalSoreness}
+                  />
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <SelectField<EquipmentAccess>
+                      label="Equipment"
+                      value={input.equipment}
+                      options={equipmentOptions}
+                      onChange={(value) => updateInput("equipment", value)}
+                    />
+                    <SelectField<GymCrowding>
+                      label="Gym crowding"
+                      value={input.crowding}
+                      options={crowdingOptions}
+                      onChange={(value) => updateInput("crowding", value)}
+                    />
+                  </div>
+
+                  <SelectField<BodyFocus>
+                    label="Goal / focus"
+                    value={input.bodyFocus}
+                    options={bodyFocusOptions}
+                    onChange={(value) => updateInput("bodyFocus", value)}
+                  />
+                </div>
+
+                <details open={viewMode === "advanced"} className="group rounded-2xl border border-white/10 bg-white/[0.03]">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.04]">
+                    <span className="flex items-center gap-2">
+                      <SlidersHorizontal className="h-4 w-4 text-primary" />
+                      Fine-tune today
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition group-open:rotate-180" />
+                  </summary>
+                  <div className="space-y-5 border-t border-white/10 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">Quick scenarios</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">Optional presets for common real-life training days.</p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                        {realities.map((reality) => (
+                          <button
+                            key={reality.label}
+                            type="button"
+                            onClick={() => applyReality(reality.input)}
+                            className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:border-primary/45 hover:bg-white/[0.06]"
+                          >
+                            <span className="block text-sm font-semibold text-white">{reality.label}</span>
+                            <span className="mt-1 block text-xs text-muted-foreground">{reality.copy}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <SignalSlider
+                      icon={Bed}
+                      label="Sleep quality"
+                      value={input.sleepQuality}
+                      tone="green"
+                      onChange={(value) => updateInput("sleepQuality", value)}
+                    />
+                    <SignalSlider
+                      icon={Brain}
+                      label="Stress"
+                      value={input.stressLevel}
+                      tone="blue"
+                      onChange={(value) => updateInput("stressLevel", value)}
+                    />
+
+                    <MuscleSorenessGrid soreness={input.sorenessByMuscle} onChange={updateMuscleSoreness} />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <SelectField<PreferredSplit>
+                        label="Preferred split"
+                        value={input.preferredSplit}
+                        options={preferredSplitOptions}
+                        onChange={(value) => updateInput("preferredSplit", value)}
+                      />
+                      <SelectField<ProgramPhase>
+                        label="Program phase"
+                        value={input.currentProgramPhase}
+                        options={programPhaseOptions}
+                        onChange={(value) => updateInput("currentProgramPhase", value)}
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <SelectField<MissedWorkoutWindow>
+                        label="Missed workouts"
+                        value={input.missedWorkouts}
+                        options={missedWorkoutOptions}
+                        onChange={(value) => updateInput("missedWorkouts", value)}
+                      />
+                      <SelectField<DiscomfortArea>
+                        label="Discomfort to avoid"
+                        value={input.discomfortArea}
+                        options={discomfortOptions}
+                        onChange={(value) => updateInput("discomfortArea", value)}
+                      />
+                    </div>
+                    <InjuryAreaButtons value={input.injuryAreas} onChange={(value) => updateInput("injuryAreas", value)} />
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="dislikedExercises">Exercises to avoid today</Label>
+                      <Input
+                        id="dislikedExercises"
+                        placeholder="Example: squats, pull-ups, bench"
+                        value={input.dislikedExercises.join(", ")}
+                        onChange={(event) =>
+                          updateInput(
+                            "dislikedExercises",
+                            event.target.value
+                              .split(",")
+                              .map((item) => item.trim())
+                              .filter(Boolean)
+                          )
+                        }
+                      />
+                    </div>
+
+                    <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2 text-white">
+                        <MapPin className="h-4 w-4 text-accent" />
+                        Plan tradeoff
+                      </div>
+                      {getTradeoffCopy(input)}
+                    </div>
+
+                    <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-muted-foreground">
+                      <div className="flex items-center gap-2 font-semibold text-white">
+                        <ShieldAlert className="h-4 w-4 text-primary" />
+                        Recovery guardrails
+                      </div>
+                      <span>Leave {workout.targetRir ?? 2} reps in reserve.</span>
+                      <span>Recovery adjustment: {workout.deload?.active ? "Active" : "Not needed"}</span>
+                    </div>
+
+                    <Button variant="outline" onClick={resetInput} disabled={isPending} className="w-full sm:w-auto">
+                      <RotateCcw className="h-4 w-4" />
+                      Reset check-in
+                    </Button>
+                  </div>
+                </details>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="space-y-3">
+            <StepLabel
+              step={2}
+              title={dailyWorkout ? "Update workout" : "Generate workout"}
+              copy={dailyWorkout ? "This replaces today's saved version and increments the version number." : "One tap turns the check-in into today's training dose."}
+            />
+            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.055] to-accent/10">
+              <CardContent className="p-5 sm:p-6">
+                <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-primary">
+                      <WandSparkles className="h-4 w-4" />
+                      {coachRead}
+                      <span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-xs text-muted-foreground">
+                        readiness preview {fitScore}/100
+                      </span>
+                      {engineContext?.momentumProtectionMode ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-xs text-amber-100">
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                          Momentum protection
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      {engineContext?.momentumProtectionMode
+                        ? "Today will be shorter, simpler, and easier to start."
+                        : getTradeoffCopy(input)}
                     </p>
                   </div>
-                ) : null}
-              </div>
-              <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border border-white/10 bg-black/35">
-                <div className="text-center">
-                  <div className="text-2xl font-semibold text-white">{fitScore}</div>
-                  <div className="text-[11px] text-muted-foreground">fit score</div>
+                  <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                    {dailyWorkout ? (
+                      <Button type="button" variant="ghost" onClick={() => setIsEditingInputs(false)} disabled={isPending}>
+                        Keep current workout
+                      </Button>
+                    ) : null}
+                    <Button onClick={() => generate(Boolean(dailyWorkout))} disabled={isPending} size="lg" className="w-full lg:w-auto">
+                      <WandSparkles className="h-4 w-4" />
+                      {isPending ? "Saving..." : generateCopy}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="space-y-5 p-5">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Quick realities</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Tap the situation. The plan adapts immediately.</p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              {realities.map((reality) => (
-                <button
-                  key={reality.label}
-                  type="button"
-                  onClick={() => applyReality(reality.input)}
-                  className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:border-primary/45 hover:bg-white/[0.06]"
-                >
-                  <span className="block font-semibold text-white">{reality.label}</span>
-                  <span className="mt-1 block text-sm text-muted-foreground">{reality.copy}</span>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="space-y-5 p-5">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Today&apos;s constraints</h3>
-              <p className="mt-1 text-sm text-muted-foreground">The workout is only premium if it respects the day.</p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Clock3 className="h-4 w-4 text-primary" />
-                  <Label htmlFor="timeAvailable">Time available</Label>
-                </div>
-                <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-white">
-                  {input.timeAvailable} min
-                </span>
-              </div>
-              <Input
-                id="timeAvailable"
-                type="number"
-                min={10}
-                max={90}
-                value={input.timeAvailable}
-                onChange={(event) => updateInput("timeAvailable", Number(event.target.value))}
-              />
-              <input
-                type="range"
-                min={10}
-                max={90}
-                value={input.timeAvailable}
-                onChange={(event) => updateInput("timeAvailable", Number(event.target.value))}
-                className="w-full accent-primary"
-              />
-            </div>
-
-            <SignalSlider
-              icon={BatteryMedium}
-              label="Energy"
-              value={input.energy}
-              tone="green"
-              onChange={(value) => updateInput("energy", value)}
-            />
-            <SignalSlider
-              icon={Activity}
-              label="Soreness"
-              value={input.soreness}
-              tone="blue"
-              onChange={updateGlobalSoreness}
-            />
-            <SignalSlider
-              icon={Bed}
-              label="Sleep quality"
-              value={input.sleepQuality}
-              tone="green"
-              onChange={(value) => updateInput("sleepQuality", value)}
-            />
-            <SignalSlider
-              icon={Brain}
-              label="Stress"
-              value={input.stressLevel}
-              tone="blue"
-              onChange={(value) => updateInput("stressLevel", value)}
-            />
-
-            <MuscleSorenessGrid soreness={input.sorenessByMuscle} onChange={updateMuscleSoreness} />
-
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <SelectField<EquipmentAccess>
-                label="Equipment"
-                value={input.equipment}
-                options={equipmentOptions}
-                onChange={(value) => updateInput("equipment", value)}
-              />
-              <SelectField<GymCrowding>
-                label="Gym crowding"
-                value={input.crowding}
-                options={crowdingOptions}
-                onChange={(value) => updateInput("crowding", value)}
-              />
-            </div>
-            <SelectField<BodyFocus>
-              label="Body focus"
-              value={input.bodyFocus}
-              options={bodyFocusOptions}
-                onChange={(value) => updateInput("bodyFocus", value)}
-              />
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <SelectField<PreferredSplit>
-                label="Preferred split"
-                value={input.preferredSplit}
-                options={preferredSplitOptions}
-                onChange={(value) => updateInput("preferredSplit", value)}
-              />
-              <SelectField<ProgramPhase>
-                label="Program phase"
-                value={input.currentProgramPhase}
-                options={programPhaseOptions}
-                onChange={(value) => updateInput("currentProgramPhase", value)}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <SelectField<MissedWorkoutWindow>
-                label="Missed workouts"
-                value={input.missedWorkouts}
-                options={missedWorkoutOptions}
-                onChange={(value) => updateInput("missedWorkouts", value)}
-              />
-              <SelectField<DiscomfortArea>
-                label="Discomfort to avoid"
-                value={input.discomfortArea}
-                options={discomfortOptions}
-                onChange={(value) => updateInput("discomfortArea", value)}
-              />
-            </div>
-            <InjuryAreaButtons value={input.injuryAreas} onChange={(value) => updateInput("injuryAreas", value)} />
-
-            <div className="grid gap-2">
-              <Label htmlFor="dislikedExercises">Exercises to avoid today</Label>
-              <Input
-                id="dislikedExercises"
-                placeholder="Example: squats, pull-ups, bench"
-                value={input.dislikedExercises.join(", ")}
-                onChange={(event) =>
-                  updateInput(
-                    "dislikedExercises",
-                    event.target.value
-                      .split(",")
-                      .map((item) => item.trim())
-                      .filter(Boolean)
-                  )
-                }
-              />
-            </div>
-
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2 text-white">
-                <MapPin className="h-4 w-4 text-accent" />
-                Plan tradeoff
-              </div>
-              {getTradeoffCopy(input)}
-            </div>
-
-            <div className="grid gap-2 rounded-2xl border border-primary/20 bg-primary/10 p-3 text-xs leading-5 text-primary">
-              <div className="flex items-center gap-2 font-semibold text-white">
-                <ShieldAlert className="h-4 w-4 text-primary" />
-                Recovery guardrails
-              </div>
-              <span>Target: RIR {workout.targetRir ?? 2} / RPE {workout.targetRpe ?? 8}</span>
-              <span>Recovery score: {workout.recoveryScore ?? "--"}/100</span>
-              <span>Dose: {workout.trainingDose ?? workout.intensity}</span>
-              <span>Deload: {workout.deload?.active ? "Active" : "Not needed"}</span>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Button onClick={generate}>
-                <WandSparkles className="h-4 w-4" />
-                Adapt workout
-              </Button>
-              <Button variant="outline" onClick={() => applyReality(defaultInput)}>
-                <RotateCcw className="h-4 w-4" />
-                Reset day
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+              </CardContent>
+            </Card>
+          </section>
+        </>
+      ) : null}
 
       <section className="space-y-4">
-        <Card className="border-white/10 bg-white/[0.035]">
-          <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-2xl bg-white/[0.06] text-primary">
-                <SlidersHorizontal className="h-4 w-4" />
-              </span>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <StepLabel
+            step={showCheckIn ? 3 : 1}
+            title="Your workout"
+            copy={hasGenerated ? "Summary first. Details only when you want them." : "Generate once your check-in matches the day."}
+          />
+          <div className="grid w-full grid-cols-2 rounded-2xl border border-white/10 bg-black/20 p-1 sm:w-auto">
+            {(["simple", "advanced"] as WorkoutViewMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                className={cn(
+                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  viewMode === mode ? "bg-primary text-primary-foreground shadow-green" : "text-muted-foreground hover:text-white"
+                )}
+              >
+                {mode === "simple" ? "Simple" : "Advanced"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {hasGenerated ? (
+          <WorkoutCard
+            workout={workout}
+            onStart={startWorkout}
+            onComplete={completeWorkout}
+            saving={isPending}
+            message={message}
+            viewMode={viewMode}
+            status={dailyWorkout?.status}
+          />
+        ) : (
+          <Card className="border-dashed border-white/15 bg-white/[0.025]">
+            <CardContent className="grid gap-4 p-6 sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
-                <p className="text-sm font-semibold text-white">Workout view</p>
-                <p className="text-xs text-muted-foreground">
-                  Simple is the clean coaching view. Advanced opens the engine details.
+                <p className="text-lg font-semibold text-white">Ready when you are.</p>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                  Fill in the check-in, then generate a plan. LiftLens will save it for today and reload it after refresh.
                 </p>
               </div>
-            </div>
-            <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-black/20 p-1">
-              {(["simple", "advanced"] as WorkoutViewMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                  className={cn(
-                    "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                    viewMode === mode ? "bg-primary text-primary-foreground shadow-green" : "text-muted-foreground hover:text-white"
-                  )}
-                >
-                  {mode === "simple" ? "Simple" : "Advanced"}
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <WorkoutCard workout={workout} onSave={save} saving={isPending} message={message} viewMode={viewMode} />
+              <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-primary">
+                <Activity className="h-6 w-6" />
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </section>
     </div>
   );

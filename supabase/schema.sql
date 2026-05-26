@@ -141,6 +141,29 @@ create table if not exists public.workouts (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.daily_workouts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workout_date date not null,
+  input_snapshot jsonb not null,
+  workout_json jsonb not null,
+  readiness_score integer check (
+    readiness_score is null
+    or readiness_score between 0 and 100
+  ),
+  training_dose text,
+  title text,
+  status text not null default 'planned' check (
+    status in ('planned', 'started', 'completed', 'skipped')
+  ),
+  version integer not null default 1 check (
+    version > 0
+  ),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint daily_workouts_user_date_unique unique (user_id, workout_date)
+);
+
 create table if not exists public.workout_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -303,6 +326,113 @@ add column if not exists workout_json jsonb not null default '{}'::jsonb;
 alter table public.workouts
 add column if not exists explanation text;
 
+create table if not exists public.daily_workouts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  workout_date date not null,
+  input_snapshot jsonb not null,
+  workout_json jsonb not null,
+  readiness_score integer check (
+    readiness_score is null
+    or readiness_score between 0 and 100
+  ),
+  training_dose text,
+  title text,
+  status text not null default 'planned' check (
+    status in ('planned', 'started', 'completed', 'skipped')
+  ),
+  version integer not null default 1 check (
+    version > 0
+  ),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.daily_workouts
+add column if not exists user_id uuid references auth.users(id) on delete cascade;
+
+alter table public.daily_workouts
+add column if not exists workout_date date not null default current_date;
+
+alter table public.daily_workouts
+add column if not exists input_snapshot jsonb not null default '{}'::jsonb;
+
+alter table public.daily_workouts
+add column if not exists workout_json jsonb not null default '{}'::jsonb;
+
+alter table public.daily_workouts
+add column if not exists readiness_score integer;
+
+alter table public.daily_workouts
+add column if not exists training_dose text;
+
+alter table public.daily_workouts
+add column if not exists title text;
+
+alter table public.daily_workouts
+add column if not exists status text not null default 'planned';
+
+alter table public.daily_workouts
+add column if not exists version integer not null default 1;
+
+alter table public.daily_workouts
+add column if not exists created_at timestamptz not null default now();
+
+alter table public.daily_workouts
+add column if not exists updated_at timestamptz not null default now();
+
+alter table public.daily_workouts
+alter column user_id set not null;
+
+alter table public.daily_workouts
+alter column workout_date set not null;
+
+alter table public.daily_workouts
+alter column input_snapshot set not null;
+
+alter table public.daily_workouts
+alter column workout_json set not null;
+
+alter table public.daily_workouts
+alter column status set not null;
+
+alter table public.daily_workouts
+alter column version set not null;
+
+alter table public.daily_workouts
+alter column created_at set not null;
+
+alter table public.daily_workouts
+alter column updated_at set not null;
+
+alter table public.daily_workouts
+drop constraint if exists daily_workouts_status_check;
+
+alter table public.daily_workouts
+add constraint daily_workouts_status_check
+check (
+  status in ('planned', 'started', 'completed', 'skipped')
+);
+
+alter table public.daily_workouts
+drop constraint if exists daily_workouts_readiness_score_check;
+
+alter table public.daily_workouts
+add constraint daily_workouts_readiness_score_check
+check (
+  readiness_score is null
+  or readiness_score between 0 and 100
+);
+
+alter table public.daily_workouts
+drop constraint if exists daily_workouts_version_check;
+
+alter table public.daily_workouts
+add constraint daily_workouts_version_check
+check (
+  version > 0
+);
+
 alter table public.profiles
 drop constraint if exists profiles_primary_goal_check;
 
@@ -409,6 +539,12 @@ on public.onboarding_answers (user_id);
 create index if not exists workouts_user_created_idx
 on public.workouts (user_id, created_at desc);
 
+create unique index if not exists daily_workouts_user_date_unique_idx
+on public.daily_workouts (user_id, workout_date);
+
+create index if not exists daily_workouts_user_updated_idx
+on public.daily_workouts (user_id, updated_at desc);
+
 create index if not exists workout_logs_user_completed_idx
 on public.workout_logs (user_id, completed_at desc);
 
@@ -442,6 +578,12 @@ execute function public.set_updated_at();
 drop trigger if exists workouts_set_updated_at on public.workouts;
 create trigger workouts_set_updated_at
 before update on public.workouts
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists daily_workouts_set_updated_at on public.daily_workouts;
+create trigger daily_workouts_set_updated_at
+before update on public.daily_workouts
 for each row
 execute function public.set_updated_at();
 
@@ -518,6 +660,7 @@ on conflict (user_id) do nothing;
 alter table public.profiles enable row level security;
 alter table public.onboarding_answers enable row level security;
 alter table public.workouts enable row level security;
+alter table public.daily_workouts enable row level security;
 alter table public.workout_logs enable row level security;
 alter table public.workout_exercises enable row level security;
 alter table public.form_checks enable row level security;
@@ -623,6 +766,41 @@ with check (
 drop policy if exists workouts_delete_own on public.workouts;
 create policy workouts_delete_own
 on public.workouts
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_workouts_select_own on public.daily_workouts;
+create policy daily_workouts_select_own
+on public.daily_workouts
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_workouts_insert_own on public.daily_workouts;
+create policy daily_workouts_insert_own
+on public.daily_workouts
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_workouts_update_own on public.daily_workouts;
+create policy daily_workouts_update_own
+on public.daily_workouts
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists daily_workouts_delete_own on public.daily_workouts;
+create policy daily_workouts_delete_own
+on public.daily_workouts
 for delete
 using (
   auth.uid() = user_id

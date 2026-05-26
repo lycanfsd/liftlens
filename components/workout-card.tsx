@@ -19,7 +19,7 @@ import { ExerciseCard } from "@/components/exercise-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import type { GeneratedWorkout, InputImpact } from "@/lib/types";
+import type { DailyWorkoutStatus, GeneratedWorkout, InputImpact } from "@/lib/types";
 import { toTitleCase } from "@/lib/utils";
 
 export type WorkoutViewMode = "simple" | "advanced";
@@ -271,7 +271,7 @@ function shapedPlanCards(workout: GeneratedWorkout) {
       seen.add(key);
       return true;
     })
-    .slice(0, 5) as PlanSignal[];
+    .slice(0, 4) as PlanSignal[];
 }
 
 function mainFocus(workout: GeneratedWorkout) {
@@ -404,18 +404,24 @@ function DetailSection({
 
 export function WorkoutCard({
   workout,
+  onStart,
+  onComplete,
   onSave,
-  saveLabel = "Save as completed",
+  saveLabel = "Complete workout",
   saving = false,
   message,
-  viewMode = "simple"
+  viewMode = "simple",
+  status = "planned"
 }: {
   workout: GeneratedWorkout;
+  onStart?: () => void;
+  onComplete?: () => void;
   onSave?: () => void;
   saveLabel?: string;
   saving?: boolean;
   message?: string;
   viewMode?: WorkoutViewMode;
+  status?: DailyWorkoutStatus;
 }) {
   const advanced = viewMode === "advanced";
   const planCards = shapedPlanCards(workout);
@@ -423,6 +429,25 @@ export function WorkoutCard({
   const logic = trainingLogicPills(workout);
   const guardrails = guardrailPills(workout);
   const showDebug = process.env.NODE_ENV !== "production" && workout.debug;
+  const startLabel = status === "completed" ? "Completed" : status === "started" ? "Workout started" : "Start workout";
+  const completeLabel = status === "completed" ? "Completed" : saveLabel;
+
+  if (!workout.exercises.length) {
+    return (
+      <Card className="border-white/10 bg-white/[0.035]">
+        <CardContent className="p-6">
+          <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">Plan needs a refresh</Badge>
+          <h2 className="mt-4 text-2xl font-semibold text-white">Let&apos;s rebuild today&apos;s workout.</h2>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+            The current plan is missing exercise data. No stress. Regenerate the session and LiftLens will rebuild it from your latest inputs.
+          </p>
+          <Button asChild className="mt-5">
+            <a href="/workout">Regenerate workout</a>
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="overflow-hidden border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.03]">
@@ -440,11 +465,15 @@ export function WorkoutCard({
               <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{coachNote(workout)}</p>
 
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button asChild size="lg" className="w-full sm:w-auto">
-                  <a href="#workout-main">
-                    <PlayCircle className="h-4 w-4" />
-                    Start workout
-                  </a>
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full sm:w-auto"
+                  onClick={onStart}
+                  disabled={saving || status === "completed"}
+                >
+                  <PlayCircle className="h-4 w-4" />
+                  {startLabel}
                 </Button>
                 <span className="text-xs font-medium text-muted-foreground">
                   {workout.exercises.length} exercises - leave {workout.targetRir ?? 2} reps in reserve
@@ -456,7 +485,7 @@ export function WorkoutCard({
               <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="h-4 w-4 text-accent" />
-                  Time
+                  Duration
                 </div>
                 <p className="mt-2 text-2xl font-semibold text-white">{workout.duration} min</p>
               </div>
@@ -489,7 +518,7 @@ export function WorkoutCard({
           <section className="border-b border-white/10 p-5 sm:p-6">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <h3 className="font-semibold text-white">What shaped today&apos;s plan</h3>
+                <h3 className="font-semibold text-white">What changed today</h3>
                 <p className="mt-1 text-sm text-muted-foreground">Only the signals that changed the workout.</p>
               </div>
               <Badge className={pillTone(intensityTone(workout))}>{intensityLabel(workout)}</Badge>
@@ -508,7 +537,7 @@ export function WorkoutCard({
         <section id="workout-main" className="p-5 sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-white">Main work</h3>
+              <h3 className="text-lg font-semibold text-white">Exercise plan</h3>
               <p className="mt-1 text-sm text-muted-foreground">Follow the order. The first lifts matter most.</p>
             </div>
             <Badge>{workout.exercises.length} moves</Badge>
@@ -522,6 +551,10 @@ export function WorkoutCard({
 
         <section className="border-t border-white/10 p-5 sm:p-6">
           <div className="grid gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Advanced details</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Open these only when you want the deeper coach logic.</p>
+            </div>
             <DetailSection title="Warmup and cooldown" icon={ListChecks} defaultOpen={advanced}>
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>
@@ -677,9 +710,9 @@ export function WorkoutCard({
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">Clean reps. One note. Stop while quality is high.</p>
                 {message ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p> : null}
               </div>
-              {onSave ? (
-                <Button onClick={onSave} disabled={saving} className="w-full">
-                  {saving ? "Saving..." : saveLabel}
+              {onComplete || onSave ? (
+                <Button onClick={onComplete ?? onSave} disabled={saving || status === "completed"} className="w-full">
+                  {saving ? "Saving..." : completeLabel}
                 </Button>
               ) : null}
             </div>

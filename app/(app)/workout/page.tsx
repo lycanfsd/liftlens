@@ -5,7 +5,11 @@ import { calculateMomentumSystem } from "@/lib/momentum";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { ExperienceLevel, FitnessGoal, WeakPoint } from "@/lib/types";
+import { getCurrentUserTodayDailyWorkoutResult } from "@/lib/workout/daily-workouts";
 import type { PerformanceTrend, WorkoutEngineContext } from "@/lib/workout/generator";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const fitnessGoalValues = ["lose-fat", "build-muscle", "recomposition", "strength", "general-health", "athletic-performance"];
 const experienceValues = ["beginner", "intermediate", "advanced"];
@@ -133,16 +137,23 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
 }
 
 export default async function WorkoutPage() {
-  const engineContext = await getWorkoutEngineContext();
+  const [engineContext, todayWorkoutResult] = await Promise.all([
+    getWorkoutEngineContext(),
+    getCurrentUserTodayDailyWorkoutResult()
+  ]);
 
   return (
     <>
       <PageHeader
         eyebrow="Daily adaptive workout"
-        title="Tell us what today looks like. We'll adjust the plan."
-        copy="Time, energy, soreness, equipment, and gym crowding all matter. Generate a session that is useful instead of unrealistic."
+        title="Build today's workout"
+        copy="Tell LiftLens what today looks like. We'll adapt the plan around your energy, time, recovery, and gym setup."
       />
-      <WorkoutGenerator engineContext={engineContext} />
+      <WorkoutGenerator
+        engineContext={engineContext}
+        initialDailyWorkout={todayWorkoutResult.record}
+        currentUserId={todayWorkoutResult.userId}
+      />
       <div className="mt-6">
         <SafetyDisclaimer />
       </div>
