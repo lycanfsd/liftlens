@@ -22,7 +22,6 @@ import {
   updateDailyWorkoutStatusAction
 } from "@/app/app-actions";
 import { NewUserChecklist, type ChecklistProgress } from "@/components/new-user-checklist";
-import { TutorialOverlay } from "@/components/tutorial-overlay";
 import { CompletedTodayBanner, CompletionSuccessModal } from "@/components/workout-completion-celebration";
 import { WorkoutCard, type WorkoutViewMode } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
@@ -315,7 +314,6 @@ export function WorkoutGenerator({
   engineContext,
   initialDailyWorkout,
   currentUserId,
-  showTutorialOnLoad = false,
   onboardingCompleted = false,
   onboardingMissingWithData = false,
   checklistProgress = {}
@@ -323,7 +321,6 @@ export function WorkoutGenerator({
   engineContext?: Partial<WorkoutEngineContext>;
   initialDailyWorkout?: DailyWorkoutRecord | null;
   currentUserId?: string | null;
-  showTutorialOnLoad?: boolean;
   onboardingCompleted?: boolean;
   onboardingMissingWithData?: boolean;
   checklistProgress?: ChecklistProgress;
@@ -349,7 +346,6 @@ export function WorkoutGenerator({
   const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkout);
   const [showRegenerateOptions, setShowRegenerateOptions] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(showTutorialOnLoad);
   const [openedInstruction, setOpenedInstruction] = useState(Boolean(checklistProgress.openedInstruction));
   const [isPending, startTransition] = useTransition();
 
@@ -549,9 +545,8 @@ export function WorkoutGenerator({
   );
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div data-tour="today-page" className="mx-auto max-w-6xl space-y-6">
       <CompletionSuccessModal open={showCompletionModal} onClose={closeCompletionModal} />
-      <TutorialOverlay open={showTutorial} onClose={() => setShowTutorial(false)} />
 
       <CompletedTodayBanner show={showCompletedBanner} />
 
@@ -671,7 +666,7 @@ export function WorkoutGenerator({
               title="Today's check-in"
               copy={dailyWorkout ? "Update only what changed. The saved workout will be replaced intentionally." : "Set the big signals first. Fine-tune only if the day needs it."}
             />
-            <Card className="border-white/10 bg-white/[0.04]">
+            <Card data-tour="daily-checkin" className="border-white/10 bg-white/[0.04]">
               <CardContent className="space-y-5 p-5">
                 <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
                   <div className="space-y-2">
@@ -866,7 +861,10 @@ export function WorkoutGenerator({
               title={dailyWorkout ? "Update workout" : "Generate workout"}
               copy={dailyWorkout ? "This replaces today's saved version and increments the version number." : "One tap turns the check-in into today's training dose."}
             />
-            <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.055] to-accent/10">
+            <Card
+              data-tour="workout-generate"
+              className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.055] to-accent/10"
+            >
               <CardContent className="p-5 sm:p-6">
                 <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
                   <div>

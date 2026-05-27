@@ -241,7 +241,10 @@ export default async function DashboardPage() {
       </PageHeader>
 
       <section className="mt-6">
-        <Card className="overflow-hidden border-white/10 bg-gradient-to-br from-white/[0.075] via-white/[0.04] to-accent/10">
+        <Card
+          data-tour="dashboard-overview"
+          className="overflow-hidden border-white/10 bg-gradient-to-br from-white/[0.075] via-white/[0.04] to-accent/10"
+        >
           <CardContent className="p-5 sm:p-6">
             <div className="grid gap-6 lg:grid-cols-[1fr_280px] lg:items-center">
               <div>

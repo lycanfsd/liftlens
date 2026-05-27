@@ -126,6 +126,7 @@ create table if not exists public.user_fitness_profiles (
   onboarding_completed boolean not null default false,
   onboarding_skipped boolean not null default false,
   tutorial_completed boolean not null default false,
+  tutorial_skipped boolean not null default false,
   checklist_progress jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -438,6 +439,7 @@ create table if not exists public.user_fitness_profiles (
   onboarding_completed boolean not null default false,
   onboarding_skipped boolean not null default false,
   tutorial_completed boolean not null default false,
+  tutorial_skipped boolean not null default false,
   checklist_progress jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -460,6 +462,7 @@ alter table public.user_fitness_profiles
   add column if not exists onboarding_completed boolean not null default false,
   add column if not exists onboarding_skipped boolean not null default false,
   add column if not exists tutorial_completed boolean not null default false,
+  add column if not exists tutorial_skipped boolean not null default false,
   add column if not exists checklist_progress jsonb not null default '{}'::jsonb,
   add column if not exists created_at timestamptz not null default now(),
   add column if not exists updated_at timestamptz not null default now();

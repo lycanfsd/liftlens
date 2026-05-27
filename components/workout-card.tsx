@@ -719,7 +719,12 @@ export function WorkoutCard({
                 {message ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p> : null}
               </div>
               {onComplete || onSave ? (
-                <Button onClick={onComplete ?? onSave} disabled={saving || status === "completed"} className="w-full">
+                <Button
+                  data-tour="complete-workout"
+                  onClick={onComplete ?? onSave}
+                  disabled={saving || status === "completed"}
+                  className="w-full"
+                >
                   {saving ? "Saving..." : completeLabel}
                 </Button>
               ) : null}

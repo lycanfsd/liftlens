@@ -183,12 +183,7 @@ async function getOnboardingTutorialState() {
   };
 }
 
-export default async function WorkoutPage({
-  searchParams
-}: {
-  searchParams: Promise<{ tutorial?: string }>;
-}) {
-  const params = await searchParams;
+export default async function WorkoutPage() {
   const [engineContext, todayWorkoutResult, onboardingState] = await Promise.all([
     getWorkoutEngineContext(),
     getCurrentUserTodayDailyWorkoutResult(),
@@ -206,7 +201,6 @@ export default async function WorkoutPage({
         engineContext={engineContext}
         initialDailyWorkout={todayWorkoutResult.record}
         currentUserId={todayWorkoutResult.userId}
-        showTutorialOnLoad={params.tutorial === "1"}
         onboardingCompleted={onboardingState.onboardingCompleted}
         onboardingMissingWithData={onboardingState.onboardingMissingWithData}
         checklistProgress={onboardingState.checklistProgress}

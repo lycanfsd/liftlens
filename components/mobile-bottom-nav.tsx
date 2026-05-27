@@ -8,9 +8,9 @@ import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const mobileItems = [
-  { href: "/dashboard", label: "Home", icon: Home },
-  { href: "/workout", label: "Today", icon: Dumbbell },
-  { href: "/progress", label: "Progress", icon: BarChart3 },
+  { href: "/dashboard", label: "Home", icon: Home, tourId: "sidebar-dashboard" },
+  { href: "/workout", label: "Today", icon: Dumbbell, tourId: "today-nav" },
+  { href: "/progress", label: "Progress", icon: BarChart3, tourId: "progress-nav" },
   { href: "/form-coach", label: "Form", icon: Video, proOnly: true },
   { href: "/weak-points", label: "Focus", icon: Target },
   { href: "/history", label: "History", icon: History },
@@ -31,6 +31,7 @@ export function MobileBottomNav({ userIdentity }: { userIdentity: AppUserIdentit
           <Link
             key={item.href}
             href={item.href}
+            data-tour={item.tourId}
             className={cn(
               "grid place-items-center gap-1 rounded-xl px-0.5 py-2 text-[10px] font-medium text-muted-foreground",
               active && "bg-white/10 text-white"

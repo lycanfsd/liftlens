@@ -140,15 +140,17 @@ function ProgressSection({
   title,
   copy,
   children,
-  action
+  action,
+  tourId
 }: {
   title: string;
   copy?: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  tourId?: string;
 }) {
   return (
-    <section className="space-y-5 scroll-mt-24">
+    <section data-tour={tourId} className="space-y-5 scroll-mt-24">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex max-w-3xl gap-3">
           <span className="mt-1 h-9 w-1 rounded-full bg-primary/70 shadow-[0_0_20px_rgba(74,222,128,0.25)]" />
@@ -203,7 +205,10 @@ function ProgressTrajectoryCard({
         : "Use this week to push strength or weak points forward.";
 
   return (
-    <Card className="min-w-0 overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]">
+    <Card
+      data-tour="progress-analytics"
+      className="min-w-0 overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]"
+    >
       <CardContent className="space-y-5 p-5 sm:p-6">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -737,6 +742,7 @@ function StrengthProgressAnalytics({
 
   return (
     <ProgressSection
+      tourId="strength-pr-tracker"
       title="Strength PRs"
       copy="Track your one-rep maxes and watch your strength trend upward."
       action={
@@ -1276,7 +1282,11 @@ function RecoveryReadiness({
   }
 
   return (
-    <ProgressSection title="Recovery & Readiness" copy="Track the inputs that decide whether to push, maintain, or reduce intensity.">
+    <ProgressSection
+      tourId="recovery-readiness"
+      title="Recovery & Readiness"
+      copy="Track the inputs that decide whether to push, maintain, or reduce intensity."
+    >
       <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
         <Card className="border-primary/20 bg-gradient-to-br from-primary/12 via-white/[0.04] to-accent/10 transition hover:border-primary/30">
           <CardContent className="p-5">

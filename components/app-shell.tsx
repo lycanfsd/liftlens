@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+
+import { GuidedWalkthrough } from "@/components/guided-walkthrough";
 import { Logo } from "@/components/logo";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { NavBar } from "@/components/nav-bar";
@@ -40,6 +43,9 @@ export function AppShell({
         </div>
       </div>
       <MobileBottomNav userIdentity={userIdentity} />
+      <Suspense fallback={null}>
+        <GuidedWalkthrough userId={userIdentity.userId} />
+      </Suspense>
     </div>
   );
 }

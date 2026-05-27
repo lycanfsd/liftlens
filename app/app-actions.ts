@@ -958,7 +958,7 @@ export async function saveRecoveryLogAction(input: unknown): Promise<EntryAction
   return { ok: true, message: "Recovery log saved to your account.", entry: mapRecoveryRow(data as Record<string, unknown>) };
 }
 
-export async function completeTutorialAction(): Promise<ActionResult> {
+export async function completeTutorialAction(mode: "completed" | "skipped" = "completed"): Promise<ActionResult> {
   if (!isSupabaseConfigured) return { ok: true, message: "Tutorial completed on this device." };
 
   const supabase = await createSupabaseServerClient();
@@ -968,19 +968,32 @@ export async function completeTutorialAction(): Promise<ActionResult> {
 
   if (!user) return { ok: false, message: "Log in again to update tutorial status." };
 
-  const { error } = await supabase.from("user_fitness_profiles").upsert(
-    {
-      user_id: user.id,
-      tutorial_completed: true,
-      updated_at: new Date().toISOString()
-    },
-    { onConflict: "user_id" }
-  );
+  const basePayload = {
+    user_id: user.id,
+    tutorial_completed: true,
+    updated_at: new Date().toISOString()
+  };
+  const payloadWithSkipped = {
+    ...basePayload,
+    tutorial_skipped: mode === "skipped"
+  };
+
+  let { error } = await supabase.from("user_fitness_profiles").upsert(payloadWithSkipped, { onConflict: "user_id" });
+
+  if (error && (error.code === "PGRST204" || error.message.toLowerCase().includes("tutorial_skipped"))) {
+    const retry = await supabase.from("user_fitness_profiles").upsert(
+      basePayload,
+      { onConflict: "user_id" }
+    );
+    error = retry.error;
+  }
 
   if (error) return { ok: false, message: error.message };
+  revalidatePath("/dashboard");
   revalidatePath("/workout");
+  revalidatePath("/progress");
   revalidatePath("/settings");
-  return { ok: true, message: "Tutorial completed." };
+  return { ok: true, message: mode === "skipped" ? "Tutorial skipped." : "Tutorial completed." };
 }
 
 export async function markChecklistItemAction(item: string): Promise<ActionResult> {

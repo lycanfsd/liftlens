@@ -25,11 +25,11 @@ import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: Home },
-  { href: "/workout", label: "Today", icon: Dumbbell },
-  { href: "/progress", label: "Progress", icon: BarChart3 },
+  { href: "/dashboard", label: "Dashboard", icon: Home, tourId: "sidebar-dashboard" },
+  { href: "/workout", label: "Today", icon: Dumbbell, tourId: "today-nav" },
+  { href: "/progress", label: "Progress", icon: BarChart3, tourId: "progress-nav" },
   { href: "/form-coach", label: "Form Coach", icon: Video, proOnly: true },
-  { href: "/recovery", label: "Recovery", icon: RotateCcw },
+  { href: "/recovery", label: "Recovery", icon: RotateCcw, tourId: "recovery-nav" },
   { href: "/weak-points", label: "Weak points", icon: Target },
   { href: "/history", label: "History", icon: History },
   { href: "/coach", label: "Coach", icon: MessageCircle },
@@ -53,6 +53,7 @@ export function NavBar({ userIdentity }: { userIdentity: AppUserIdentity }) {
             <Link
               key={item.href}
               href={item.href}
+              data-tour={item.tourId}
               className={cn(
                 "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-white/10 hover:text-white",
                 active && "bg-white/10 text-white"
