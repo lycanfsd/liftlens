@@ -16,6 +16,7 @@ const protectedRoutes = [
   "/history",
   "/coach",
   "/profile",
+  "/progress",
   "/settings",
   "/onboarding"
 ];
@@ -67,6 +68,51 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
+  }
+
+  if (isProtected && user && pathname !== "/onboarding") {
+    try {
+      const [fitnessProfileResult, ...dataChecks] = await Promise.all([
+        supabase
+          .from("user_fitness_profiles")
+          .select("onboarding_completed")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("workout_logs")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id),
+        supabase
+          .from("daily_workouts")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id),
+        supabase
+          .from("pr_history")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id),
+        supabase
+          .from("physique_measurements")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id),
+        supabase
+          .from("recovery_logs")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+      ]);
+
+      const { data: fitnessProfile, error: profileError } = fitnessProfileResult;
+      const hasCompletedOnboarding = fitnessProfile?.onboarding_completed === true;
+      const hasExistingTrainingData = dataChecks.some((check) => Boolean(check.count && check.count > 0));
+
+      if (!profileError && !hasCompletedOnboarding && !hasExistingTrainingData) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/onboarding";
+        url.search = "";
+        return NextResponse.redirect(url);
+      }
+    } catch {
+      // If the optional onboarding table has not been created yet, keep the app accessible.
+    }
   }
 
   if (isAuthPage && user) {

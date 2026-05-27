@@ -7,9 +7,9 @@ export default function OnboardingPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Setup"
-        title="Let's build a plan that bends instead of breaks."
-        copy="A few honest answers help FlexFit tune volume, exercise selection, and recovery guidance."
+        eyebrow="NOVYRA setup"
+        title="Set your training direction."
+        copy="Fast answers now. Sharper daily plans later."
       />
       <Suspense>
         <OnboardingForm />

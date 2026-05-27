@@ -73,9 +73,12 @@ export default function SettingsPage() {
               <Button asChild>
                 <Link href="/profile">Open profile</Link>
               </Button>
+              <Button asChild variant="secondary">
+                <Link href="/workout?tutorial=1">Replay tutorial</Link>
+              </Button>
               <form action={logoutAction}>
                 <Button type="submit" variant="outline" className="w-full sm:w-auto">
-                Log out
+                  Log out
                 </Button>
               </form>
             </div>

@@ -96,6 +96,41 @@ create table if not exists public.onboarding_answers (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.user_fitness_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  primary_goal text check (
+    primary_goal is null
+    or primary_goal in ('lose-fat', 'build-muscle', 'recomposition', 'strength', 'general-health', 'athletic-performance')
+  ),
+  physique_focus text[] not null default '{}',
+  experience_level text check (
+    experience_level is null
+    or experience_level in ('beginner', 'intermediate', 'advanced')
+  ),
+  training_days_per_week integer check (
+    training_days_per_week is null
+    or training_days_per_week between 2 and 6
+  ),
+  preferred_workout_length text check (
+    preferred_workout_length is null
+    or preferred_workout_length in ('30', '45', '60', '75-plus')
+  ),
+  equipment text[] not null default '{}',
+  weak_points text[] not null default '{}',
+  adjust_for_soreness boolean not null default true,
+  adjust_for_energy boolean not null default true,
+  adjust_for_time boolean not null default true,
+  beginner_explanations boolean not null default false,
+  emphasize_progress_analytics boolean not null default true,
+  onboarding_completed boolean not null default false,
+  onboarding_skipped boolean not null default false,
+  tutorial_completed boolean not null default false,
+  checklist_progress jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.workouts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -234,6 +269,86 @@ create table if not exists public.daily_ai_messages (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.pr_history (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  lift text not null check (
+    lift in ('Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-Up / Lat Pulldown')
+  ),
+  date date not null,
+  one_rep_max numeric(7, 1) not null check (
+    one_rep_max > 0
+  ),
+  unit text not null default 'lb' check (
+    unit in ('lb', 'kg')
+  ),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint pr_history_user_lift_date_unique unique (user_id, lift, date)
+);
+
+alter table public.pr_history
+drop constraint if exists pr_history_user_lift_date_unit_unique;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'pr_history_user_lift_date_unique'
+      and conrelid = 'public.pr_history'::regclass
+  ) then
+    alter table public.pr_history
+    add constraint pr_history_user_lift_date_unique unique (user_id, lift, date);
+  end if;
+end;
+$$;
+
+create table if not exists public.physique_measurements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  weight numeric(7, 1),
+  waist numeric(7, 1),
+  chest numeric(7, 1),
+  shoulders numeric(7, 1),
+  arms numeric(7, 1),
+  thighs numeric(7, 1),
+  hips_glutes numeric(7, 1),
+  body_fat numeric(5, 1),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint physique_measurements_user_date_unique unique (user_id, date)
+);
+
+create table if not exists public.recovery_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  sleep_hours numeric(4, 1) not null check (
+    sleep_hours between 0 and 14
+  ),
+  energy integer not null check (
+    energy between 1 and 10
+  ),
+  soreness integer not null check (
+    soreness between 1 and 10
+  ),
+  stress integer not null check (
+    stress between 1 and 10
+  ),
+  workout_rpe integer not null check (
+    workout_rpe between 1 and 10
+  ),
+  score integer not null check (
+    score between 0 and 100
+  ),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint recovery_logs_user_date_unique unique (user_id, date)
+);
+
 -- Required exact Supabase Storage bucket name for AI Form Coach videos: form-videos.
 insert into storage.buckets (
   id,
@@ -304,6 +419,50 @@ alter table public.profiles
 
 alter table public.onboarding_answers
 add column if not exists updated_at timestamptz not null default now();
+
+create table if not exists public.user_fitness_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  primary_goal text,
+  physique_focus text[] not null default '{}',
+  experience_level text,
+  training_days_per_week integer,
+  preferred_workout_length text,
+  equipment text[] not null default '{}',
+  weak_points text[] not null default '{}',
+  adjust_for_soreness boolean not null default true,
+  adjust_for_energy boolean not null default true,
+  adjust_for_time boolean not null default true,
+  beginner_explanations boolean not null default false,
+  emphasize_progress_analytics boolean not null default true,
+  onboarding_completed boolean not null default false,
+  onboarding_skipped boolean not null default false,
+  tutorial_completed boolean not null default false,
+  checklist_progress jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_fitness_profiles
+  add column if not exists user_id uuid references auth.users(id) on delete cascade,
+  add column if not exists primary_goal text,
+  add column if not exists physique_focus text[] not null default '{}',
+  add column if not exists experience_level text,
+  add column if not exists training_days_per_week integer,
+  add column if not exists preferred_workout_length text,
+  add column if not exists equipment text[] not null default '{}',
+  add column if not exists weak_points text[] not null default '{}',
+  add column if not exists adjust_for_soreness boolean not null default true,
+  add column if not exists adjust_for_energy boolean not null default true,
+  add column if not exists adjust_for_time boolean not null default true,
+  add column if not exists beginner_explanations boolean not null default false,
+  add column if not exists emphasize_progress_analytics boolean not null default true,
+  add column if not exists onboarding_completed boolean not null default false,
+  add column if not exists onboarding_skipped boolean not null default false,
+  add column if not exists tutorial_completed boolean not null default false,
+  add column if not exists checklist_progress jsonb not null default '{}'::jsonb,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
 
 alter table public.workouts
 add column if not exists updated_at timestamptz not null default now();
@@ -527,6 +686,9 @@ on public.profiles (user_id);
 create unique index if not exists onboarding_answers_user_id_unique_idx
 on public.onboarding_answers (user_id);
 
+create unique index if not exists user_fitness_profiles_user_id_unique_idx
+on public.user_fitness_profiles (user_id);
+
 create index if not exists profiles_user_id_idx
 on public.profiles (user_id);
 
@@ -535,6 +697,9 @@ on public.profiles (email);
 
 create index if not exists onboarding_answers_user_id_idx
 on public.onboarding_answers (user_id);
+
+create index if not exists user_fitness_profiles_user_id_idx
+on public.user_fitness_profiles (user_id);
 
 create index if not exists workouts_user_created_idx
 on public.workouts (user_id, created_at desc);
@@ -557,6 +722,15 @@ on public.workout_exercises (workout_id, exercise_order);
 create index if not exists form_checks_user_created_idx
 on public.form_checks (user_id, created_at desc);
 
+create index if not exists pr_history_user_lift_date_idx
+on public.pr_history (user_id, lift, date desc);
+
+create index if not exists physique_measurements_user_date_idx
+on public.physique_measurements (user_id, date desc);
+
+create index if not exists recovery_logs_user_date_idx
+on public.recovery_logs (user_id, date desc);
+
 create unique index if not exists daily_ai_messages_user_date_unique_idx
 on public.daily_ai_messages (user_id, message_date);
 
@@ -572,6 +746,12 @@ execute function public.set_updated_at();
 drop trigger if exists onboarding_answers_set_updated_at on public.onboarding_answers;
 create trigger onboarding_answers_set_updated_at
 before update on public.onboarding_answers
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists user_fitness_profiles_set_updated_at on public.user_fitness_profiles;
+create trigger user_fitness_profiles_set_updated_at
+before update on public.user_fitness_profiles
 for each row
 execute function public.set_updated_at();
 
@@ -596,6 +776,24 @@ execute function public.set_updated_at();
 drop trigger if exists workout_exercises_set_updated_at on public.workout_exercises;
 create trigger workout_exercises_set_updated_at
 before update on public.workout_exercises
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists pr_history_set_updated_at on public.pr_history;
+create trigger pr_history_set_updated_at
+before update on public.pr_history
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists physique_measurements_set_updated_at on public.physique_measurements;
+create trigger physique_measurements_set_updated_at
+before update on public.physique_measurements
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists recovery_logs_set_updated_at on public.recovery_logs;
+create trigger recovery_logs_set_updated_at
+before update on public.recovery_logs
 for each row
 execute function public.set_updated_at();
 
@@ -637,6 +835,14 @@ begin
     full_name = coalesce(public.profiles.full_name, excluded.full_name),
     updated_at = now();
 
+  insert into public.user_fitness_profiles (
+    user_id
+  )
+  values (
+    new.id
+  )
+  on conflict (user_id) do nothing;
+
   return new;
 end;
 $$;
@@ -657,13 +863,25 @@ select
 from auth.users
 on conflict (user_id) do nothing;
 
+insert into public.user_fitness_profiles (
+  user_id
+)
+select
+  auth.users.id
+from auth.users
+on conflict (user_id) do nothing;
+
 alter table public.profiles enable row level security;
 alter table public.onboarding_answers enable row level security;
+alter table public.user_fitness_profiles enable row level security;
 alter table public.workouts enable row level security;
 alter table public.daily_workouts enable row level security;
 alter table public.workout_logs enable row level security;
 alter table public.workout_exercises enable row level security;
 alter table public.form_checks enable row level security;
+alter table public.pr_history enable row level security;
+alter table public.physique_measurements enable row level security;
+alter table public.recovery_logs enable row level security;
 alter table public.daily_ai_messages enable row level security;
 
 drop policy if exists profiles_select_own on public.profiles;
@@ -731,6 +949,41 @@ with check (
 drop policy if exists onboarding_answers_delete_own on public.onboarding_answers;
 create policy onboarding_answers_delete_own
 on public.onboarding_answers
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists user_fitness_profiles_select_own on public.user_fitness_profiles;
+create policy user_fitness_profiles_select_own
+on public.user_fitness_profiles
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists user_fitness_profiles_insert_own on public.user_fitness_profiles;
+create policy user_fitness_profiles_insert_own
+on public.user_fitness_profiles
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists user_fitness_profiles_update_own on public.user_fitness_profiles;
+create policy user_fitness_profiles_update_own
+on public.user_fitness_profiles
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists user_fitness_profiles_delete_own on public.user_fitness_profiles;
+create policy user_fitness_profiles_delete_own
+on public.user_fitness_profiles
 for delete
 using (
   auth.uid() = user_id
@@ -883,6 +1136,111 @@ with check (
 drop policy if exists workout_exercises_delete_own on public.workout_exercises;
 create policy workout_exercises_delete_own
 on public.workout_exercises
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists pr_history_select_own on public.pr_history;
+create policy pr_history_select_own
+on public.pr_history
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists pr_history_insert_own on public.pr_history;
+create policy pr_history_insert_own
+on public.pr_history
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists pr_history_update_own on public.pr_history;
+create policy pr_history_update_own
+on public.pr_history
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists pr_history_delete_own on public.pr_history;
+create policy pr_history_delete_own
+on public.pr_history
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists physique_measurements_select_own on public.physique_measurements;
+create policy physique_measurements_select_own
+on public.physique_measurements
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists physique_measurements_insert_own on public.physique_measurements;
+create policy physique_measurements_insert_own
+on public.physique_measurements
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists physique_measurements_update_own on public.physique_measurements;
+create policy physique_measurements_update_own
+on public.physique_measurements
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists physique_measurements_delete_own on public.physique_measurements;
+create policy physique_measurements_delete_own
+on public.physique_measurements
+for delete
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists recovery_logs_select_own on public.recovery_logs;
+create policy recovery_logs_select_own
+on public.recovery_logs
+for select
+using (
+  auth.uid() = user_id
+);
+
+drop policy if exists recovery_logs_insert_own on public.recovery_logs;
+create policy recovery_logs_insert_own
+on public.recovery_logs
+for insert
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists recovery_logs_update_own on public.recovery_logs;
+create policy recovery_logs_update_own
+on public.recovery_logs
+for update
+using (
+  auth.uid() = user_id
+)
+with check (
+  auth.uid() = user_id
+);
+
+drop policy if exists recovery_logs_delete_own on public.recovery_logs;
+create policy recovery_logs_delete_own
+on public.recovery_logs
 for delete
 using (
   auth.uid() = user_id

@@ -238,40 +238,9 @@ function normalizeLiftName(name: string) {
   return name;
 }
 
-function demoStrengthEntries(): ExercisePerformanceEntry[] {
-  const now = Date.now();
-  return [
-    ["Bench Press", 150, 7, 162, 8],
-    ["Squat", 205, 6, 225, 6],
-    ["Deadlift", 245, 5, 265, 5],
-    ["Overhead Press", 90, 7, 98, 6],
-    ["Row", 135, 8, 148, 8],
-    ["Pull-up / Pulldown", 110, 9, 120, 10]
-  ].flatMap(([name, previousWeight, previousReps, currentWeight, currentReps], index) => [
-    {
-      id: `demo-${name}-previous`,
-      date: new Date(now - (32 + index) * dayMs).toISOString(),
-      exerciseName: String(name),
-      sets: 1,
-      reps: Number(previousReps),
-      weight: Number(previousWeight),
-      isDemo: true
-    },
-    {
-      id: `demo-${name}-current`,
-      date: new Date(now - index * dayMs).toISOString(),
-      exerciseName: String(name),
-      sets: 1,
-      reps: Number(currentReps),
-      weight: Number(currentWeight),
-      isDemo: true
-    }
-  ]);
-}
-
 function strengthProgress(entries: ExercisePerformanceEntry[]): StrengthProgressItem[] {
   const usableEntries = entries.filter((entry) => entry.weight && entry.reps > 0);
-  const source = usableEntries.length ? usableEntries : demoStrengthEntries();
+  const source = usableEntries;
   const grouped = source.reduce<Record<string, ExercisePerformanceEntry[]>>((acc, entry) => {
     const lift = normalizeLiftName(entry.exerciseName);
     if (!["Bench Press", "Squat", "Deadlift", "Overhead Press", "Row", "Pull-up / Pulldown"].includes(lift)) return acc;
@@ -440,8 +409,8 @@ export function buildProgressAnalytics({
 }): ProgressAnalytics {
   const hasRealWorkoutData = logs.length > 0 && !logs.every((log) => log.id.startsWith("demo-"));
   const hasRealLoadData = exercises.some((entry) => entry.weight && !entry.isDemo);
-  const workingLogs = logs.length ? logs : demoWorkoutLogs();
-  const workingExercises = exercises.length ? exercises : demoExerciseEntries();
+  const workingLogs = logs;
+  const workingExercises = exercises;
   const consistency = calculateConsistency(workingLogs, weeklyTarget);
   const strength = strengthProgress(workingExercises);
   const muscleGroups = calculateMuscleGroupVolume(workingExercises);
@@ -483,9 +452,9 @@ export function buildProgressAnalytics({
       currentStreak: `${consistency.currentStreak} ${consistency.currentStreak === 1 ? "day" : "days"}`,
       streakSubtext: consistency.currentStreak > 0 ? "Keep stacking wins" : "Start the next run today",
       weeklyVolume: weeklyVolume > 0 ? `${formatLargeNumber(weeklyVolume)} lb` : "Pending",
-      weeklyVolumeSubtext: hasRealLoadData ? "Total lifted this week" : "Demo until set weights are tracked",
-      strengthProgress: `${avgStrengthChange >= 0 ? "+" : ""}${avgStrengthChange.toFixed(1)}%`,
-      strengthSubtext: hasRealLoadData ? "Compared with last month" : "Demo strength adapter",
+      weeklyVolumeSubtext: hasRealLoadData ? "Total lifted this week" : "Complete workouts to build the signal",
+      strengthProgress: hasRealLoadData ? `${avgStrengthChange >= 0 ? "+" : ""}${avgStrengthChange.toFixed(1)}%` : "Pending",
+      strengthSubtext: hasRealLoadData ? "Compared with last month" : "Add PRs to start the trend",
       recoveryScore: `${recoveryScore}/100`,
       recoverySubtext: recoveryText
     },

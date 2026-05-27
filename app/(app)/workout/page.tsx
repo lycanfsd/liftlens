@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { SafetyDisclaimer } from "@/components/safety-disclaimer";
 import { WorkoutGenerator } from "@/components/workout-generator";
+import type { ChecklistProgress } from "@/components/new-user-checklist";
 import { calculateMomentumSystem } from "@/lib/momentum";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -136,10 +137,62 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
   };
 }
 
-export default async function WorkoutPage() {
-  const [engineContext, todayWorkoutResult] = await Promise.all([
+async function getOnboardingTutorialState() {
+  if (!isSupabaseConfigured) {
+    return {
+      onboardingCompleted: false,
+      tutorialCompleted: false,
+      checklistProgress: {} as ChecklistProgress,
+      onboardingMissingWithData: false
+    };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      onboardingCompleted: false,
+      tutorialCompleted: false,
+      checklistProgress: {} as ChecklistProgress,
+      onboardingMissingWithData: false
+    };
+  }
+
+  const [{ data: fitnessProfile }, { count: completedWorkoutCount }] = await Promise.all([
+    supabase
+      .from("user_fitness_profiles")
+      .select("onboarding_completed, tutorial_completed, checklist_progress")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("workout_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+  ]);
+  const profile = (fitnessProfile ?? {}) as Record<string, unknown>;
+  const onboardingCompleted = profile.onboarding_completed === true;
+
+  return {
+    onboardingCompleted,
+    tutorialCompleted: profile.tutorial_completed === true,
+    checklistProgress: (profile.checklist_progress ?? {}) as ChecklistProgress,
+    onboardingMissingWithData: !onboardingCompleted && Boolean(completedWorkoutCount && completedWorkoutCount > 0)
+  };
+}
+
+export default async function WorkoutPage({
+  searchParams
+}: {
+  searchParams: Promise<{ tutorial?: string }>;
+}) {
+  const params = await searchParams;
+  const [engineContext, todayWorkoutResult, onboardingState] = await Promise.all([
     getWorkoutEngineContext(),
-    getCurrentUserTodayDailyWorkoutResult()
+    getCurrentUserTodayDailyWorkoutResult(),
+    getOnboardingTutorialState()
   ]);
 
   return (
@@ -147,12 +200,16 @@ export default async function WorkoutPage() {
       <PageHeader
         eyebrow="Daily adaptive workout"
         title="Build today's workout"
-        copy="Tell LiftLens what today looks like. We'll adapt the plan around your energy, time, recovery, and gym setup."
+        copy="Tell NOVYRA what today looks like. We'll adapt the plan around your energy, time, recovery, and gym setup."
       />
       <WorkoutGenerator
         engineContext={engineContext}
         initialDailyWorkout={todayWorkoutResult.record}
         currentUserId={todayWorkoutResult.userId}
+        showTutorialOnLoad={params.tutorial === "1"}
+        onboardingCompleted={onboardingState.onboardingCompleted}
+        onboardingMissingWithData={onboardingState.onboardingMissingWithData}
+        checklistProgress={onboardingState.checklistProgress}
       />
       <div className="mt-6">
         <SafetyDisclaimer />

@@ -17,9 +17,15 @@ import {
   Sparkles,
   Trophy
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 
-import { StatCard } from "@/components/stat-card";
+import {
+  markChecklistItemAction,
+  savePhysiqueMeasurementAction,
+  savePrHistoryEntryAction,
+  saveRecoveryLogAction
+} from "@/app/app-actions";
+import { StatCard, statCardTextStyles } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +43,7 @@ import {
   getPRPercentChangeForLift,
   getPRStorageKey,
   mainPRLifts,
+  mergePRHistoryEntry,
   savePRHistoryEntry,
   type PRHistoryEntry,
   type PRLift
@@ -102,10 +109,31 @@ function saveLocalArray<T>(key: string, value: T[]) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
+function sortByDateDesc<T extends { date: string }>(entries: T[]) {
+  return [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+function mergeDatedEntry<T extends { id: string; date: string }>(entries: T[], entry: T) {
+  const existingIndex = entries.findIndex((current) => current.date === entry.date);
+  const next =
+    existingIndex >= 0
+      ? entries.map((current, index) => (index === existingIndex ? { ...entry, id: current.id } : current))
+      : [entry, ...entries];
+  return sortByDateDesc(next).slice(0, 100);
+}
+
 function formatChange(change: number | null, unit: string) {
   if (change === null) return "First entry";
   if (change === 0) return "No change";
   return `${change > 0 ? "+" : ""}${change.toFixed(1)} ${unit}`;
+}
+
+function formatProfileLabel(value: string | null | undefined) {
+  if (!value) return "Recomposition";
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function ProgressSection({
@@ -155,9 +183,18 @@ function SourceBadge({ real }: { real: boolean }) {
   );
 }
 
-function ProgressTrajectoryCard({ analytics, recoveryScore }: { analytics: ProgressAnalytics; recoveryScore: number }) {
+function ProgressTrajectoryCard({
+  analytics,
+  recoveryScore,
+  profileGoal,
+  weakPoints = []
+}: {
+  analytics: ProgressAnalytics;
+  recoveryScore: number;
+  profileGoal?: string | null;
+  weakPoints?: string[];
+}) {
   const completion = analytics.consistency.completionRate;
-  const hasStrongSignal = analytics.hasRealWorkoutData && analytics.hasRealLoadData;
   const nextMove =
     recoveryScore < 60
       ? "Keep intensity controlled until recovery rebounds."
@@ -166,34 +203,38 @@ function ProgressTrajectoryCard({ analytics, recoveryScore }: { analytics: Progr
         : "Use this week to push strength or weak points forward.";
 
   return (
-    <Card className="overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]">
-      <CardContent className="p-5 sm:p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-              <Sparkles className="h-3.5 w-3.5" />
-              Physique trajectory
-            </div>
-            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Progress without noise.</h2>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              The important signals are consistency, strength, recovery, and balanced volume. Everything else stays tucked away until it matters.
-            </p>
+    <Card className="min-w-0 overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.16),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]">
+      <CardContent className="space-y-5 p-5 sm:p-6">
+        <div className="max-w-3xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+            <Sparkles className="h-3.5 w-3.5" />
+            Physique trajectory
           </div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[460px]">
-            {[
-              ["Completion", `${completion}%`, completion >= 80 ? "On pace" : "Needs one win"],
-              ["Recovery", `${recoveryScore}/100`, recoveryInterpretation(recoveryScore)],
-              ["Data signal", hasStrongSignal ? "Live" : "Blended", hasStrongSignal ? "Real workout data" : "Some demo adapters"]
-            ].map(([label, value, copy]) => (
-              <div key={label} className={cn(insetPanel, "p-4")}>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{copy}</p>
-              </div>
-            ))}
-          </div>
+          <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Progress without noise.</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+            The important signals are consistency, strength, recovery, and balanced volume. Everything else stays tucked away until it matters.
+          </p>
         </div>
-        <div className="mt-5 rounded-2xl border border-primary/15 bg-black/25 p-4 text-sm leading-6 text-muted-foreground">
+
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["Completion", `${completion}%`, completion >= 80 ? "On pace" : "Needs one win"],
+            ["Recovery", `${recoveryScore}/100`, recoveryInterpretation(recoveryScore)],
+            [
+              "Profile bias",
+              formatProfileLabel(profileGoal),
+              weakPoints.length ? `Weak point: ${formatProfileLabel(weakPoints[0])}` : "Set in onboarding"
+            ]
+          ].map(([label, value, copy]) => (
+            <div key={label} className={cn(insetPanel, "min-w-0 p-4 sm:p-5")}>
+              <p className={statCardTextStyles.label}>{label}</p>
+              <p className={cn(statCardTextStyles.value, "text-[clamp(1.35rem,2vw,1.75rem)]")}>{value}</p>
+              <p className={cn(statCardTextStyles.detail, "mt-1 text-xs leading-5")}>{copy}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-2xl border border-primary/15 bg-black/25 p-4 text-sm leading-6 text-muted-foreground">
           <span className="font-semibold text-primary">Next best move:</span> {nextMove}
         </div>
       </CardContent>
@@ -453,7 +494,7 @@ function PRTrendChart({ entries, lift, unit }: { entries: PRHistoryEntry[]; lift
           </span>
           <h4 className="mt-4 font-semibold text-white">Start tracking your strength</h4>
           <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-            Add your current one-rep max for your main lifts to see your progress over time.
+            Add your first PR to start tracking strength.
           </p>
         </div>
       </div>
@@ -590,13 +631,22 @@ function PRTrendChart({ entries, lift, unit }: { entries: PRHistoryEntry[]; lift
   );
 }
 
-function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressAnalytics; userId?: string | null }) {
+function StrengthProgressAnalytics({
+  analytics,
+  userId,
+  initialEntries = []
+}: {
+  analytics: ProgressAnalytics;
+  userId?: string | null;
+  initialEntries?: PRHistoryEntry[];
+}) {
   const unit = "lb";
   const storageKey = useMemo(() => getPRStorageKey(userId), [userId]);
   const [entries, setEntries] = useState<PRHistoryEntry[]>([]);
   const [selectedLift, setSelectedLift] = useState<PRLift>(mainPRLifts[0]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [isSavingPr, startPrTransition] = useTransition();
   const [form, setForm] = useState<PRFormState>({
     lift: mainPRLifts[0],
     date: todayKey(),
@@ -610,10 +660,11 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
   const selectedPercent = getPRPercentChangeForLift(entries, selectedLift, unit);
   const selectedNewPr = isLatestAllTimePR(latest, allTime);
   const hasAnyPrs = entries.length > 0;
+  const accountSyncEnabled = Boolean(userId);
 
   useEffect(() => {
-    setEntries(getPRHistory(storageKey));
-  }, [storageKey]);
+    setEntries(accountSyncEnabled ? initialEntries : getPRHistory(storageKey));
+  }, [accountSyncEnabled, initialEntries, storageKey]);
 
   function selectLift(lift: PRLift) {
     setSelectedLift(lift);
@@ -647,7 +698,7 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
       return;
     }
 
-    const next = savePRHistoryEntry(storageKey, {
+    const entry: PRHistoryEntry = {
       id: createId("pr"),
       lift: form.lift,
       date: form.date,
@@ -655,13 +706,33 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
       unit,
       notes: form.notes.trim() || undefined,
       createdAt: new Date().toISOString()
-    });
+    };
 
-    setEntries(next);
-    setSelectedLift(form.lift);
-    setError("");
-    setMessage(`${form.lift} PR saved.`);
-    setForm((current) => ({ ...current, oneRepMax: "", notes: "" }));
+    if (!accountSyncEnabled) {
+      const next = savePRHistoryEntry(storageKey, entry);
+      setEntries(next);
+      setSelectedLift(form.lift);
+      setError("");
+      setMessage(`${form.lift} PR saved on this device.`);
+      setForm((current) => ({ ...current, oneRepMax: "", notes: "" }));
+      return;
+    }
+
+    startPrTransition(async () => {
+      const result = await savePrHistoryEntryAction(entry);
+
+      if (!result.ok || !result.entry) {
+        setError(result.message);
+        setMessage("");
+        return;
+      }
+
+      setEntries((current) => mergePRHistoryEntry(current, result.entry as PRHistoryEntry));
+      setSelectedLift(result.entry.lift as PRLift);
+      setError("");
+      setMessage(result.message);
+      setForm((current) => ({ ...current, oneRepMax: "", notes: "" }));
+    });
   }
 
   return (
@@ -670,7 +741,9 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
       copy="Track your one-rep maxes and watch your strength trend upward."
       action={
         <div className="flex flex-wrap gap-2">
-          <Badge className="border-primary/20 bg-primary/10 text-primary">Local PR log</Badge>
+          <Badge className="border-primary/20 bg-primary/10 text-primary">
+            {accountSyncEnabled ? "Account-synced PRs" : "Local PR log"}
+          </Badge>
           <SourceBadge real={analytics.hasRealLoadData} />
         </div>
       }
@@ -728,10 +801,10 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
               </div>
             </div>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Button type="button" className="w-full sm:w-auto" onClick={savePr}>
-                <Plus className="h-4 w-4" />
-                Save PR
-              </Button>
+            <Button type="button" className="w-full sm:w-auto" onClick={savePr} disabled={isSavingPr}>
+              <Plus className="h-4 w-4" />
+              {isSavingPr ? "Saving..." : "Save PR"}
+            </Button>
               {message ? <p className="text-sm text-primary">{message}</p> : null}
               {error ? <p className="text-sm text-amber-100">{error}</p> : null}
             </div>
@@ -740,7 +813,7 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
               <div className="mt-5 rounded-2xl border border-dashed border-white/15 bg-white/[0.025] p-5">
                 <p className="font-semibold text-white">Start tracking your strength</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Add your current one-rep max for your main lifts to see your progress over time.
+                  Add your first PR to start tracking strength.
                 </p>
               </div>
             ) : null}
@@ -847,6 +920,29 @@ function StrengthProgressAnalytics({ analytics, userId }: { analytics: ProgressA
 function MuscleGroupVolumeAnalytics({ analytics }: { analytics: ProgressAnalytics }) {
   const maxTarget = Math.max(...analytics.muscleGroups.map((group) => group.targetMax));
 
+  if (!analytics.hasRealWorkoutData) {
+    return (
+      <ProgressSection title="Muscle Group Balance" copy="Weekly hard sets will appear here once completed workouts start syncing.">
+        <Card className={polishedCardHover}>
+          <CardContent className="grid gap-4 p-6 sm:grid-cols-[1fr_auto] sm:items-center">
+            <div>
+              <p className="text-lg font-semibold text-white">Complete your first workout to unlock volume trends.</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                NOVYRA will count hard sets by muscle group and show whether your physique work is balanced.
+              </p>
+              <Button asChild className="mt-5 w-full sm:w-auto">
+                <a href="/workout">Build today&apos;s workout</a>
+              </Button>
+            </div>
+            <span className="grid h-16 w-16 place-items-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+              <Dumbbell className="h-7 w-7" />
+            </span>
+          </CardContent>
+        </Card>
+      </ProgressSection>
+    );
+  }
+
   return (
     <ProgressSection title="Muscle Group Balance" copy="Weekly hard sets by muscle group, compared with useful physique-building target ranges.">
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
@@ -904,9 +1000,20 @@ function MuscleGroupVolumeAnalytics({ analytics }: { analytics: ProgressAnalytic
   );
 }
 
-function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: PhysiqueMeasurementEntry[]) => void }) {
+function PhysiqueTracker({
+  onEntriesChange,
+  initialEntries = [],
+  userId
+}: {
+  onEntriesChange: (entries: PhysiqueMeasurementEntry[]) => void;
+  initialEntries?: PhysiqueMeasurementEntry[];
+  userId?: string | null;
+}) {
   const [entries, setEntries] = useState<PhysiqueMeasurementEntry[]>([]);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isSavingPhysique, startPhysiqueTransition] = useTransition();
+  const accountSyncEnabled = Boolean(userId);
   const [form, setForm] = useState<PhysiqueFormState>({
     date: todayKey(),
     weight: "",
@@ -920,10 +1027,10 @@ function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: Physi
   });
 
   useEffect(() => {
-    const loaded = loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey);
+    const loaded = accountSyncEnabled ? initialEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey);
     setEntries(loaded);
     onEntriesChange(loaded);
-  }, [onEntriesChange]);
+  }, [accountSyncEnabled, initialEntries, onEntriesChange]);
 
   function updateField(key: keyof PhysiqueFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -942,11 +1049,31 @@ function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: Physi
       hipsGlutes: safeNumber(form.hipsGlutes),
       bodyFat: safeNumber(form.bodyFat)
     };
-    const next = [entry, ...entries].slice(0, 100);
-    setEntries(next);
-    onEntriesChange(next);
-    saveLocalArray(physiqueStorageKey, next);
-    setMessage("Physique metrics saved on this device.");
+    if (!accountSyncEnabled) {
+      const next = mergeDatedEntry(entries, entry);
+      setEntries(next);
+      onEntriesChange(next);
+      saveLocalArray(physiqueStorageKey, next);
+      setMessage("Physique metrics saved on this device.");
+      setError("");
+      return;
+    }
+
+    startPhysiqueTransition(async () => {
+      const result = await savePhysiqueMeasurementAction(entry);
+
+      if (!result.ok || !result.entry) {
+        setError(result.message);
+        setMessage("");
+        return;
+      }
+
+      const next = mergeDatedEntry(entries, result.entry);
+      setEntries(next);
+      onEntriesChange(next);
+      setMessage(result.message);
+      setError("");
+    });
   }
 
   return (
@@ -959,7 +1086,9 @@ function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: Physi
                 <h3 className="font-semibold text-white">Add measurement</h3>
                 <p className="mt-1 text-sm text-muted-foreground">Small updates, clean trendline later.</p>
               </div>
-              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">Local log</Badge>
+              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">
+                {accountSyncEnabled ? "Account synced" : "Local log"}
+              </Badge>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
@@ -980,11 +1109,12 @@ function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: Physi
                 </div>
               ))}
             </div>
-            <Button type="button" className="mt-5 w-full sm:w-auto" onClick={saveEntry}>
+            <Button type="button" className="mt-5 w-full sm:w-auto" onClick={saveEntry} disabled={isSavingPhysique}>
               <Plus className="h-4 w-4" />
-              Save measurement
+              {isSavingPhysique ? "Saving..." : "Save measurement"}
             </Button>
             {message ? <p className="mt-3 text-sm text-primary">{message}</p> : null}
+            {error ? <p className="mt-3 text-sm text-amber-100">{error}</p> : null}
           </CardContent>
         </Card>
 
@@ -1023,7 +1153,7 @@ function PhysiqueTracker({ onEntriesChange }: { onEntriesChange: (entries: Physi
                   </span>
                   <h4 className="mt-4 font-semibold text-white">No physique entries yet</h4>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-                    Add one measurement to start tracking the shape changes that matter.
+                    Log your first measurement to track your physique changes.
                   </p>
                 </div>
               </div>
@@ -1066,9 +1196,20 @@ function ProgressPhotos() {
   );
 }
 
-function RecoveryReadiness({ onScoreChange }: { onScoreChange: (score: number) => void }) {
+function RecoveryReadiness({
+  onScoreChange,
+  initialEntries = [],
+  userId
+}: {
+  onScoreChange: (score: number) => void;
+  initialEntries?: RecoveryLogEntry[];
+  userId?: string | null;
+}) {
   const [entries, setEntries] = useState<RecoveryLogEntry[]>([]);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [isSavingRecovery, startRecoveryTransition] = useTransition();
+  const accountSyncEnabled = Boolean(userId);
   const [form, setForm] = useState<RecoveryFormState>({
     date: todayKey(),
     sleepHours: "7",
@@ -1079,10 +1220,10 @@ function RecoveryReadiness({ onScoreChange }: { onScoreChange: (score: number) =
   });
 
   useEffect(() => {
-    const loaded = loadLocalArray<RecoveryLogEntry>(recoveryStorageKey);
+    const loaded = accountSyncEnabled ? initialEntries : loadLocalArray<RecoveryLogEntry>(recoveryStorageKey);
     setEntries(loaded);
     if (loaded[0]) onScoreChange(loaded[0].score);
-  }, [onScoreChange]);
+  }, [accountSyncEnabled, initialEntries, onScoreChange]);
 
   const previewScore = calculateRecoveryScore({
     sleepHours: Number(form.sleepHours) || 0,
@@ -1107,11 +1248,31 @@ function RecoveryReadiness({ onScoreChange }: { onScoreChange: (score: number) =
       workoutRpe: Number(form.workoutRpe) || 0,
       score: previewScore
     };
-    const next = [entry, ...entries].slice(0, 100);
-    setEntries(next);
-    saveLocalArray(recoveryStorageKey, next);
-    onScoreChange(entry.score);
-    setMessage("Recovery log saved on this device.");
+    if (!accountSyncEnabled) {
+      const next = mergeDatedEntry(entries, entry);
+      setEntries(next);
+      saveLocalArray(recoveryStorageKey, next);
+      onScoreChange(entry.score);
+      setMessage("Recovery log saved on this device.");
+      setError("");
+      return;
+    }
+
+    startRecoveryTransition(async () => {
+      const result = await saveRecoveryLogAction(entry);
+
+      if (!result.ok || !result.entry) {
+        setError(result.message);
+        setMessage("");
+        return;
+      }
+
+      const next = mergeDatedEntry(entries, result.entry);
+      setEntries(next);
+      onScoreChange(result.entry.score);
+      setMessage(result.message);
+      setError("");
+    });
   }
 
   return (
@@ -1142,7 +1303,9 @@ function RecoveryReadiness({ onScoreChange }: { onScoreChange: (score: number) =
                 <h3 className="font-semibold text-white">Log readiness</h3>
                 <p className="mt-1 text-sm text-muted-foreground">Use simple signals to keep training dose honest.</p>
               </div>
-              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">Local log</Badge>
+              <Badge className="border-white/10 bg-white/[0.04] text-muted-foreground">
+                {accountSyncEnabled ? "Account synced" : "Local log"}
+              </Badge>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="grid gap-2">
@@ -1171,10 +1334,11 @@ function RecoveryReadiness({ onScoreChange }: { onScoreChange: (score: number) =
                 </div>
               ))}
             </div>
-            <Button type="button" className="mt-5 w-full sm:w-auto" onClick={saveEntry}>
-              Save recovery log
+            <Button type="button" className="mt-5 w-full sm:w-auto" onClick={saveEntry} disabled={isSavingRecovery}>
+              {isSavingRecovery ? "Saving..." : "Save recovery log"}
             </Button>
             {message ? <p className="mt-3 text-sm text-primary">{message}</p> : null}
+            {error ? <p className="mt-3 text-sm text-amber-100">{error}</p> : null}
           </CardContent>
         </Card>
       </div>
@@ -1233,18 +1397,40 @@ function AICoachInsights({
   );
 }
 
-export function ProgressAnalyticsCenter({ analytics, userId }: { analytics: ProgressAnalytics; userId?: string | null }) {
-  const initialRecoveryScore = Number.parseInt(analytics.overview.recoveryScore, 10) || 72;
+export function ProgressAnalyticsCenter({
+  analytics,
+  userId,
+  initialPrEntries = [],
+  initialPhysiqueEntries = [],
+  initialRecoveryEntries = [],
+  profileGoal,
+  weakPoints = []
+}: {
+  analytics: ProgressAnalytics;
+  userId?: string | null;
+  initialPrEntries?: PRHistoryEntry[];
+  initialPhysiqueEntries?: PhysiqueMeasurementEntry[];
+  initialRecoveryEntries?: RecoveryLogEntry[];
+  profileGoal?: string | null;
+  weakPoints?: string[];
+}) {
+  const latestRecoveryScore = initialRecoveryEntries[0]?.score;
+  const initialRecoveryScore = latestRecoveryScore ?? (Number.parseInt(analytics.overview.recoveryScore, 10) || 72);
   const [recoveryScore, setRecoveryScore] = useState(initialRecoveryScore);
   const [physiqueEntries, setPhysiqueEntries] = useState<PhysiqueMeasurementEntry[]>([]);
 
   useEffect(() => {
-    setPhysiqueEntries(loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey));
-  }, []);
+    setPhysiqueEntries(userId ? initialPhysiqueEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey));
+  }, [initialPhysiqueEntries, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    void markChecklistItemAction("visitedProgress");
+  }, [userId]);
 
   return (
     <div className="space-y-10 sm:space-y-12">
-      <ProgressTrajectoryCard analytics={analytics} recoveryScore={recoveryScore} />
+      <ProgressTrajectoryCard analytics={analytics} recoveryScore={recoveryScore} profileGoal={profileGoal} weakPoints={weakPoints} />
       {!analytics.hasRealWorkoutData || !analytics.hasRealLoadData ? (
         <Card className="border-white/10 bg-white/[0.035]">
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1260,11 +1446,11 @@ export function ProgressAnalyticsCenter({ analytics, userId }: { analytics: Prog
       ) : null}
       <OverviewCards analytics={analytics} recoveryScore={recoveryScore} />
       <ConsistencyAnalytics analytics={analytics} />
-      <StrengthProgressAnalytics analytics={analytics} userId={userId} />
+      <StrengthProgressAnalytics analytics={analytics} userId={userId} initialEntries={initialPrEntries} />
       <MuscleGroupVolumeAnalytics analytics={analytics} />
-      <PhysiqueTracker onEntriesChange={setPhysiqueEntries} />
+      <PhysiqueTracker onEntriesChange={setPhysiqueEntries} initialEntries={initialPhysiqueEntries} userId={userId} />
       <ProgressPhotos />
-      <RecoveryReadiness onScoreChange={setRecoveryScore} />
+      <RecoveryReadiness onScoreChange={setRecoveryScore} initialEntries={initialRecoveryEntries} userId={userId} />
       <AICoachInsights analytics={analytics} physiqueEntries={physiqueEntries} recoveryScore={recoveryScore} />
     </div>
   );

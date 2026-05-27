@@ -70,6 +70,7 @@ The schema is in `supabase/schema.sql` and includes:
 
 - `profiles`
 - `onboarding_answers`
+- `user_fitness_profiles`
 - `workouts`
 - `workout_exercises`
 - `workout_logs`
@@ -79,6 +80,10 @@ The schema is in `supabase/schema.sql` and includes:
 Row-level security is enabled so users can only access their own data.
 
 If your project already has the older `daily_coach_messages` table or a partial `daily_ai_messages` table, run `supabase/daily_ai_messages_migration.sql` in the Supabase SQL Editor to align the daily dashboard coach API with the expected schema.
+
+For the NOVYRA onboarding, guided tutorial, and new-user checklist, run `supabase/user_fitness_profiles_migration.sql` if your Supabase project was created before this table existed. The full `supabase/schema.sql` also includes this table and RLS policies for fresh setups.
+
+If Strength PR saving shows `public.pr_history` missing from the schema cache, run `supabase/pr_history_migration.sql` in the Supabase SQL Editor. It creates the `pr_history` table, adds RLS policies, and aligns the unique key with the app's `user_id + lift + date` upsert behavior.
 
 ### Storage Buckets
 

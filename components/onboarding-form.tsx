@@ -1,93 +1,149 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, Dumbbell, Gauge, Sparkles, Target } from "lucide-react";
 
-import { saveOnboardingAction } from "@/app/app-actions";
+import { saveOnboardingAction, skipOnboardingAction } from "@/app/app-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  equipmentOptions,
-  experienceLevels,
-  fitnessGoals,
-  struggles,
-  weakPoints
-} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type OnboardingValues = {
   primary_goal: string;
+  physique_focus: string[];
   experience_level: string;
-  weekly_availability: number;
-  typical_workout_length: number;
-  equipment_access: string;
-  biggest_struggle: string;
+  training_days_per_week: number;
+  preferred_workout_length: string;
+  equipment: string[];
   weak_points: string[];
+  adjust_for_soreness: boolean;
+  adjust_for_energy: boolean;
+  adjust_for_time: boolean;
+  beginner_explanations: boolean;
+  emphasize_progress_analytics: boolean;
 };
+
+type PreferenceKey =
+  | "adjust_for_soreness"
+  | "adjust_for_energy"
+  | "adjust_for_time"
+  | "beginner_explanations"
+  | "emphasize_progress_analytics";
 
 const initialValues: OnboardingValues = {
-  primary_goal: "recomposition",
+  primary_goal: "build-muscle",
+  physique_focus: ["balanced-muscle-growth"],
   experience_level: "intermediate",
-  weekly_availability: 4,
-  typical_workout_length: 35,
-  equipment_access: "full-gym",
-  biggest_struggle: "time",
-  weak_points: ["shoulders", "back"]
+  training_days_per_week: 4,
+  preferred_workout_length: "45",
+  equipment: ["full-gym"],
+  weak_points: ["shoulders", "back"],
+  adjust_for_soreness: true,
+  adjust_for_energy: true,
+  adjust_for_time: true,
+  beginner_explanations: false,
+  emphasize_progress_analytics: true
 };
 
-const steps = [
-  {
-    title: "What should FlexFit optimize for?",
-    copy: "This sets the bias for volume, intensity, and what counts as a good session.",
-    eyebrow: "Goal"
-  },
-  {
-    title: "How trained are you right now?",
-    copy: "Not your identity. Just the starting difficulty.",
-    eyebrow: "Experience"
-  },
-  {
-    title: "What does your real week allow?",
-    copy: "Paid fitness products should respect your calendar before they write workouts.",
-    eyebrow: "Schedule"
-  },
-  {
-    title: "Where does training usually break?",
-    copy: "FlexFit uses this to make the fallback plan feel obvious, not like failure.",
-    eyebrow: "Friction"
-  },
-  {
-    title: "Choose quiet weak-point bias.",
-    copy: "We will add small nudges without turning every workout into an overstuffed plan.",
-    eyebrow: "Focus"
-  }
+const goals = [
+  ["build-muscle", "Build muscle"],
+  ["lose-fat", "Lose fat"],
+  ["recomposition", "Recomposition"],
+  ["strength", "Get stronger"],
+  ["athletic-performance", "Improve athleticism"],
+  ["general-health", "General fitness"]
 ];
+
+const physiqueFocus = [
+  ["lean-athletic", "Lean and athletic"],
+  ["bigger-upper-body", "Bigger upper body"],
+  ["v-taper", "V-taper"],
+  ["bigger-arms", "Bigger arms"],
+  ["bigger-chest", "Bigger chest"],
+  ["wider-shoulders", "Wider shoulders"],
+  ["glutes-lower-body", "Glutes/lower body focus"],
+  ["balanced-muscle-growth", "Balanced muscle growth"]
+];
+
+const experienceLevels = [
+  ["beginner", "Beginner"],
+  ["intermediate", "Intermediate"],
+  ["advanced", "Advanced"]
+];
+
+const equipmentOptions = [
+  ["full-gym", "Full gym"],
+  ["dumbbells-only", "Dumbbells only"],
+  ["barbell-rack", "Barbell + rack"],
+  ["machines", "Machines"],
+  ["cables", "Cables"],
+  ["bands", "Resistance bands"],
+  ["bodyweight", "Bodyweight only"],
+  ["home-gym", "Home gym"]
+];
+
+const weakPointOptions = [
+  ["chest", "Chest"],
+  ["back", "Back"],
+  ["shoulders", "Shoulders"],
+  ["arms", "Arms"],
+  ["core", "Core"],
+  ["quads", "Quads"],
+  ["hamstrings", "Hamstrings"],
+  ["glutes", "Glutes"],
+  ["calves", "Calves"],
+  ["conditioning", "Conditioning"]
+];
+
+const recoveryPreferences: Array<[PreferenceKey, string]> = [
+  ["adjust_for_soreness", "Adjust for soreness"],
+  ["adjust_for_energy", "Adjust for energy"],
+  ["adjust_for_time", "Adjust for available time"],
+  ["beginner_explanations", "Show beginner form help"],
+  ["emphasize_progress_analytics", "Emphasize progress analytics"]
+];
+
+const stepTitles = [
+  "Welcome",
+  "Goal",
+  "Physique",
+  "Experience",
+  "Schedule",
+  "Equipment",
+  "Weak points",
+  "Preferences",
+  "Ready"
+];
+
+function pretty(value: string) {
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 function ChoiceCard({
   label,
-  copy,
   selected,
-  onClick
+  onClick,
+  compact = false
 }: {
   label: string;
-  copy?: string;
   selected: boolean;
   onClick: () => void;
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative min-h-24 rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left transition hover:border-primary/45 hover:bg-white/[0.06]",
+        "relative rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/45 hover:bg-white/[0.06]",
+        compact ? "min-h-14" : "min-h-20",
         selected && "border-primary/70 bg-primary/10 shadow-green"
       )}
     >
       <span className="block pr-8 font-semibold text-white">{label}</span>
-      {copy ? <span className="mt-1 block text-sm leading-6 text-muted-foreground">{copy}</span> : null}
       <span
         className={cn(
           "absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full border border-white/15 text-transparent",
@@ -100,111 +156,82 @@ function ChoiceCard({
   );
 }
 
-function MetricInput({
-  label,
-  value,
-  suffix,
-  min,
-  max,
-  onChange
-}: {
-  label: string;
-  value: number;
-  suffix: string;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-}) {
+function ToggleRow({ label, enabled, onClick }: { label: string; enabled: boolean; onClick: () => void }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-      <div className="flex items-center justify-between gap-3">
-        <Label>{label}</Label>
-        <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-semibold text-white">
-          {value} {suffix}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="mt-5 w-full accent-primary"
-      />
-      <Input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="mt-4"
-      />
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left transition hover:border-primary/35 hover:bg-white/[0.055]"
+    >
+      <span className="text-sm font-semibold text-white">{label}</span>
+      <span className={cn("h-6 w-11 rounded-full border p-0.5 transition", enabled ? "border-primary bg-primary/25" : "border-white/15 bg-black/30")}>
+        <span className={cn("block h-[18px] w-[18px] rounded-full bg-white transition", enabled && "translate-x-5 bg-primary")} />
+      </span>
+    </button>
   );
 }
 
 export function OnboardingForm() {
-  const searchParams = useSearchParams();
-  const error = searchParams.get("error");
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<OnboardingValues>(initialValues);
-  const current = steps[step];
-  const progress = Math.round(((step + 1) / steps.length) * 100);
+  const progress = Math.round(((step + 1) / stepTitles.length) * 100);
+  const currentTitle = stepTitles[step];
 
-  const fingerprint = useMemo(() => {
-    const goal = fitnessGoals.find((item) => item.value === values.primary_goal)?.label ?? "Recomposition";
-    const equipment = equipmentOptions.find((item) => item.value === values.equipment_access)?.label ?? "Full gym";
-    const struggle = struggles.find((item) => item.value === values.biggest_struggle)?.label ?? "Time";
-    return [
-      `${goal} bias`,
-      `${values.weekly_availability} days / ${values.typical_workout_length} min`,
-      equipment,
-      `${struggle} fallback`
-    ];
-  }, [values]);
+  const fingerprint = useMemo(
+    () => [
+      pretty(values.primary_goal),
+      `${values.training_days_per_week} days / ${values.preferred_workout_length === "75-plus" ? "75+" : values.preferred_workout_length} min`,
+      `${values.equipment.length} equipment options`,
+      `${values.weak_points.length} weak-point targets`
+    ],
+    [values]
+  );
 
   function setValue<Key extends keyof OnboardingValues>(key: Key, value: OnboardingValues[Key]) {
-    setValues((currentValues) => ({ ...currentValues, [key]: value }));
+    setValues((current) => ({ ...current, [key]: value }));
   }
 
-  function toggleWeakPoint(value: string) {
-    setValues((currentValues) => {
-      const selected = currentValues.weak_points.includes(value);
-      const weak_points = selected
-        ? currentValues.weak_points.filter((item) => item !== value)
-        : [...currentValues.weak_points, value];
-      return { ...currentValues, weak_points };
+  function toggleList(key: "physique_focus" | "equipment" | "weak_points", value: string) {
+    setValues((current) => {
+      const selected = current[key].includes(value);
+      const next = selected ? current[key].filter((item) => item !== value) : [...current[key], value];
+      return { ...current, [key]: next.length ? next : current[key] };
     });
   }
 
   return (
-    <form action={saveOnboardingAction} className="grid gap-6 lg:grid-cols-[340px_1fr]">
+    <form action={saveOnboardingAction} className="grid gap-6 lg:grid-cols-[320px_1fr]">
       <input type="hidden" name="primary_goal" value={values.primary_goal} />
       <input type="hidden" name="experience_level" value={values.experience_level} />
-      <input type="hidden" name="weekly_availability" value={values.weekly_availability} />
-      <input type="hidden" name="typical_workout_length" value={values.typical_workout_length} />
-      <input type="hidden" name="equipment_access" value={values.equipment_access} />
-      <input type="hidden" name="biggest_struggle" value={values.biggest_struggle} />
-      {values.weak_points.map((weakPoint) => (
-        <input key={weakPoint} type="hidden" name="weak_points" value={weakPoint} />
+      <input type="hidden" name="training_days_per_week" value={values.training_days_per_week} />
+      <input type="hidden" name="preferred_workout_length" value={values.preferred_workout_length} />
+      {values.physique_focus.map((item) => (
+        <input key={item} type="hidden" name="physique_focus" value={item} />
+      ))}
+      {values.equipment.map((item) => (
+        <input key={item} type="hidden" name="equipment" value={item} />
+      ))}
+      {values.weak_points.map((item) => (
+        <input key={item} type="hidden" name="weak_points" value={item} />
+      ))}
+      {recoveryPreferences.map(([key]) => (
+        <input key={key} type="hidden" name={key} value={String(values[key])} />
       ))}
 
       <aside className="h-fit rounded-2xl border border-white/10 bg-black/30 p-5 lg:sticky lg:top-8">
         <div className="flex items-center gap-2 text-primary">
           <Sparkles className="h-4 w-4" />
-          <span className="text-sm font-semibold">Fit profile</span>
+          <span className="text-sm font-semibold">NOVYRA setup</span>
         </div>
-        <h2 className="mt-4 text-2xl font-semibold text-white">Build the plan around your actual life.</h2>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          The best onboarding does not ask for everything. It finds the constraints that change the workout.
-        </p>
-
-        <div className="mt-6 h-2 overflow-hidden rounded-full bg-white/10">
+        <h2 className="mt-4 text-2xl font-semibold text-white">Make the plan yours.</h2>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">Fast setup. Better daily calls.</p>
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
         </div>
-        <p className="mt-2 text-xs font-medium text-muted-foreground">{progress}% profile complete</p>
-
-        <div className="mt-6 space-y-2">
+        <p className="mt-2 text-xs font-medium text-muted-foreground">
+          Step {step + 1} of {stepTitles.length} - {currentTitle}
+        </p>
+        <div className="mt-5 space-y-2">
           {fingerprint.map((item) => (
             <div key={item} className="flex items-center gap-2 rounded-xl bg-white/[0.05] px-3 py-2 text-sm text-white">
               <Check className="h-4 w-4 text-primary" />
@@ -214,163 +241,207 @@ export function OnboardingForm() {
         </div>
       </aside>
 
-      <Card className="overflow-hidden border-primary/20">
+      <Card className="overflow-hidden border-primary/20 bg-[radial-gradient(circle_at_top_right,rgba(74,222,128,0.08),transparent_34%),rgba(255,255,255,0.035)]">
         <CardContent className="p-5 sm:p-6">
-          {error ? (
-            <div className="mb-5 rounded-2xl border border-destructive/25 bg-destructive/10 p-3 text-sm text-red-200">
-              {error}
+          <div className="mb-6">
+            <div className="flex items-center justify-between gap-3 text-xs font-semibold text-muted-foreground">
+              <span>{currentTitle}</span>
+              <span>{progress}%</span>
             </div>
-          ) : null}
-
-          <div className="mb-6 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-primary">{current.eyebrow}</p>
-              <h2 className="mt-2 max-w-2xl text-2xl font-semibold text-white sm:text-3xl">{current.title}</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{current.copy}</p>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
             </div>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground">
-              {step + 1} / {steps.length}
-            </span>
           </div>
 
           {step === 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {fitnessGoals.map((item) => (
-                <ChoiceCard
-                  key={item.value}
-                  label={item.label}
-                  copy={item.copy}
-                  selected={values.primary_goal === item.value}
-                  onClick={() => setValue("primary_goal", item.value)}
-                />
-              ))}
+            <div className="grid min-h-[390px] place-items-center text-center">
+              <div className="max-w-2xl">
+                <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/15 text-primary">
+                  <Sparkles className="h-7 w-7" />
+                </span>
+                <h1 className="mt-6 text-3xl font-semibold text-white sm:text-4xl">Welcome to NOVYRA</h1>
+                <p className="mt-3 text-lg text-muted-foreground">Your daily AI fitness coach for building your dream physique.</p>
+                <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+                  A few quick answers. Smarter workouts every day.
+                </p>
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
+                  <Button type="button" size="lg" onClick={() => setStep(1)}>
+                    Get started
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    formAction={skipOnboardingAction}
+                    className="text-muted-foreground hover:text-white"
+                  >
+                    Skip for now
+                  </Button>
+                </div>
+              </div>
             </div>
           ) : null}
 
           {step === 1 ? (
-            <div className="grid gap-3 sm:grid-cols-3">
-              {experienceLevels.map((item) => (
-                <ChoiceCard
-                  key={item.value}
-                  label={item.label}
-                  copy={
-                    item.value === "beginner"
-                      ? "Simple moves, clear wins"
-                      : item.value === "intermediate"
-                        ? "Progress without clutter"
-                        : "More autonomy and load"
-                  }
-                  selected={values.experience_level === item.value}
-                  onClick={() => setValue("experience_level", item.value)}
-                />
-              ))}
-            </div>
+            <>
+              <Header eyebrow="Goal" title="What are you working toward?" copy="Pick the main outcome." />
+              <div className="grid gap-3 sm:grid-cols-2">
+                {goals.map(([value, label]) => (
+                  <ChoiceCard key={value} label={label} selected={values.primary_goal === value} onClick={() => setValue("primary_goal", value)} />
+                ))}
+              </div>
+            </>
           ) : null}
 
           {step === 2 ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <MetricInput
-                label="Weekly availability"
-                value={values.weekly_availability}
-                suffix="days"
-                min={1}
-                max={7}
-                onChange={(value) => setValue("weekly_availability", value)}
-              />
-              <MetricInput
-                label="Typical workout length"
-                value={values.typical_workout_length}
-                suffix="min"
-                min={10}
-                max={90}
-                onChange={(value) => setValue("typical_workout_length", value)}
-              />
-            </div>
+            <>
+              <Header eyebrow="Dream physique" title="What physique are you building?" copy="Choose every focus that fits." />
+              <div className="grid gap-3 sm:grid-cols-2">
+                {physiqueFocus.map(([value, label]) => (
+                  <ChoiceCard key={value} label={label} selected={values.physique_focus.includes(value)} onClick={() => toggleList("physique_focus", value)} />
+                ))}
+              </div>
+            </>
           ) : null}
 
           {step === 3 ? (
-            <div className="grid gap-5 xl:grid-cols-2">
-              <div>
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                  <Dumbbell className="h-4 w-4 text-primary" />
-                  Equipment
-                </div>
-                <div className="grid gap-3">
-                  {equipmentOptions.map((item) => (
-                    <ChoiceCard
-                      key={item.value}
-                      label={item.label}
-                      selected={values.equipment_access === item.value}
-                      onClick={() => setValue("equipment_access", item.value)}
-                    />
-                  ))}
-                </div>
+            <>
+              <Header eyebrow="Experience" title="What is your training experience?" copy="This adjusts volume and coaching depth." />
+              <div className="grid gap-3 sm:grid-cols-3">
+                {experienceLevels.map(([value, label]) => (
+                  <ChoiceCard key={value} label={label} selected={values.experience_level === value} onClick={() => setValue("experience_level", value)} />
+                ))}
               </div>
-              <div>
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                  <Gauge className="h-4 w-4 text-accent" />
-                  Biggest struggle
-                </div>
-                <div className="grid gap-3">
-                  {struggles.map((item) => (
-                    <ChoiceCard
-                      key={item.value}
-                      label={item.label}
-                      selected={values.biggest_struggle === item.value}
-                      onClick={() => setValue("biggest_struggle", item.value)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
+            </>
           ) : null}
 
           {step === 4 ? (
-            <div>
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                <Target className="h-4 w-4 text-primary" />
-                Choose at least one
+            <>
+              <Header eyebrow="Schedule" title="What can you repeat?" copy="Realistic beats perfect." />
+              <div className="grid gap-5 xl:grid-cols-2">
+                <div>
+                  <p className="mb-3 text-sm font-semibold text-white">Training days per week</p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 xl:grid-cols-2">
+                    {[2, 3, 4, 5, 6].map((days) => (
+                      <ChoiceCard key={days} compact label={`${days} days`} selected={values.training_days_per_week === days} onClick={() => setValue("training_days_per_week", days)} />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-3 text-sm font-semibold text-white">Preferred workout length</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {["30", "45", "60", "75-plus"].map((length) => (
+                      <ChoiceCard
+                        key={length}
+                        compact
+                        label={length === "75-plus" ? "75+ minutes" : `${length} minutes`}
+                        selected={values.preferred_workout_length === length}
+                        onClick={() => setValue("preferred_workout_length", length)}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {weakPoints.map((point) => (
-                  <ChoiceCard
-                    key={point.value}
-                    label={point.label}
-                    selected={values.weak_points.includes(point.value)}
-                    onClick={() => toggleWeakPoint(point.value)}
-                  />
+            </>
+          ) : null}
+
+          {step === 5 ? (
+            <>
+              <Header eyebrow="Equipment" title="What do you usually have?" copy="Select all that apply." />
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                <Dumbbell className="h-4 w-4 text-primary" />
+                Equipment access
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {equipmentOptions.map(([value, label]) => (
+                  <ChoiceCard key={value} label={label} selected={values.equipment.includes(value)} onClick={() => toggleList("equipment", value)} />
                 ))}
               </div>
-              {values.weak_points.length === 0 ? (
-                <p className="mt-3 text-sm text-red-200">Choose one focus area so FlexFit has a useful bias.</p>
-              ) : null}
+            </>
+          ) : null}
+
+          {step === 6 ? (
+            <>
+              <Header eyebrow="Weak points" title="What should come up?" copy="We will bias these when recovery allows." />
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                <Target className="h-4 w-4 text-primary" />
+                Choose one or more
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {weakPointOptions.map(([value, label]) => (
+                  <ChoiceCard key={value} compact label={label} selected={values.weak_points.includes(value)} onClick={() => toggleList("weak_points", value)} />
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {step === 7 ? (
+            <>
+              <Header eyebrow="Recovery" title="How should NOVYRA adapt?" copy="Keep the daily plan useful." />
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                <Gauge className="h-4 w-4 text-primary" />
+                Adaptation preferences
+              </div>
+              <div className="grid gap-3">
+                {recoveryPreferences.map(([key, label]) => (
+                  <ToggleRow key={key} label={label} enabled={Boolean(values[key])} onClick={() => setValue(key, !values[key])} />
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {step === 8 ? (
+            <div className="grid min-h-[390px] place-items-center text-center">
+              <div className="max-w-2xl">
+                <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/15 text-primary">
+                  <Check className="h-7 w-7" />
+                </span>
+                <h1 className="mt-6 text-3xl font-semibold text-white sm:text-4xl">You&apos;re ready</h1>
+                <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
+                  Your goals, schedule, equipment, and weak points now guide the daily plan.
+                </p>
+                <Button type="submit" size="lg" className="mt-8">
+                  Go to Today
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ) : null}
 
-          <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={step === 0}
-              onClick={() => setStep((currentStep) => Math.max(0, currentStep - 1))}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
-            {step < steps.length - 1 ? (
-              <Button type="button" onClick={() => setStep((currentStep) => currentStep + 1)}>
-                Continue
-                <ArrowRight className="h-4 w-4" />
+          {step > 0 && step < 8 ? (
+            <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Button type="button" variant="ghost" onClick={() => setStep((current) => Math.max(0, current - 1))}>
+                <ArrowLeft className="h-4 w-4" />
+                Back
               </Button>
-            ) : (
-              <Button type="submit" disabled={values.weak_points.length === 0}>
-                Finish setup
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  formAction={skipOnboardingAction}
+                  className="text-muted-foreground hover:text-white"
+                >
+                  Skip for now
+                </Button>
+                <Button type="button" onClick={() => setStep((current) => current + 1)}>
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </form>
+  );
+}
+
+function Header({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
+  return (
+    <div className="mb-6">
+      <p className="text-sm font-semibold text-primary">{eyebrow}</p>
+      <h2 className="mt-2 max-w-2xl text-2xl font-semibold text-white sm:text-3xl">{title}</h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{copy}</p>
+    </div>
   );
 }

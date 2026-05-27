@@ -407,6 +407,7 @@ export function WorkoutCard({
   onStart,
   onComplete,
   onSave,
+  onInstructionOpen,
   saveLabel = "Complete workout",
   saving = false,
   message,
@@ -417,6 +418,7 @@ export function WorkoutCard({
   onStart?: () => void;
   onComplete?: () => void;
   onSave?: () => void;
+  onInstructionOpen?: () => void;
   saveLabel?: string;
   saving?: boolean;
   message?: string;
@@ -544,7 +546,13 @@ export function WorkoutCard({
           </div>
           <div className="space-y-3">
             {workout.exercises.map((exercise, index) => (
-              <ExerciseCard key={`${exercise.name}-${index}`} exercise={exercise} index={index} advanced={advanced} />
+              <ExerciseCard
+                key={`${exercise.name}-${index}`}
+                exercise={exercise}
+                index={index}
+                advanced={advanced}
+                onInstructionOpen={onInstructionOpen}
+              />
             ))}
           </div>
         </section>

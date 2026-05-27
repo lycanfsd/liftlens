@@ -110,11 +110,13 @@ function ExercisePills({ pills }: { pills: ExercisePill[] }) {
 export function ExerciseCard({
   exercise,
   index,
-  advanced = false
+  advanced = false,
+  onInstructionOpen
 }: {
   exercise: ExercisePrescription;
   index: number;
   advanced?: boolean;
+  onInstructionOpen?: () => void;
 }) {
   const insights = exerciseInsights(exercise);
   const [activeExerciseModal, setActiveExerciseModal] = useState<ExerciseSupportMode | null>(null);
@@ -136,7 +138,10 @@ export function ExerciseCard({
             <ExerciseActionButtons
               exerciseName={exercise.name}
               onVideo={() => setActiveExerciseModal("video")}
-              onInstructions={() => setActiveExerciseModal("instructions")}
+              onInstructions={() => {
+                onInstructionOpen?.();
+                setActiveExerciseModal("instructions");
+              }}
             />
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{exercise.cue}</p>

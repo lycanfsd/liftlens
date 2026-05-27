@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
+import { mainPRLifts, type PRHistoryEntry } from "@/lib/progress/pr-history";
+import { calculateRecoveryScore, type RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyCheckIn, DailyWorkoutRecord, DailyWorkoutStatus, GeneratedWorkout } from "@/lib/types";
@@ -16,10 +19,15 @@ import { generateAdaptiveWorkout, type WorkoutEngineContext } from "@/lib/workou
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_WORKOUT_COACH_MODEL = "gpt-4.1-mini";
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
 export type ActionResult = {
   ok: boolean;
   message: string;
+};
+
+type EntryActionResult<T> = ActionResult & {
+  entry?: T;
 };
 
 export type WorkoutExplanationResult = {
@@ -48,41 +56,56 @@ export type ProfileActionState = {
   error?: string;
 };
 
+const primaryGoalSchema = z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health", "athletic-performance"]);
+const experienceLevelSchema = z.enum(["beginner", "intermediate", "advanced"]);
 const onboardingSchema = z.object({
-  primary_goal: z.enum(["lose-fat", "build-muscle", "recomposition", "strength", "general-health", "athletic-performance"]),
-  experience_level: z.enum(["beginner", "intermediate", "advanced"]),
-  weekly_availability: z.coerce.number().min(1).max(7),
-  typical_workout_length: z.coerce.number().min(10).max(120),
-  equipment_access: z.enum(["full-gym", "home-gym", "dumbbells-only", "bodyweight"]),
-  biggest_struggle: z.enum([
-    "consistency",
-    "diet",
-    "motivation",
-    "time",
-    "gym-anxiety",
-    "not-knowing-what-to-do"
-  ]),
-  weak_points: z.array(z.string()).min(1, "Choose at least one weak point.")
+  primary_goal: primaryGoalSchema,
+  physique_focus: z.array(z.string()).default([]),
+  experience_level: experienceLevelSchema,
+  training_days_per_week: z.coerce.number().min(2).max(6),
+  preferred_workout_length: z.enum(["30", "45", "60", "75-plus"]),
+  equipment: z.array(z.string()).min(1, "Choose at least one equipment option."),
+  weak_points: z.array(z.string()).min(1, "Choose at least one weak point."),
+  adjust_for_soreness: z.coerce.boolean().default(true),
+  adjust_for_energy: z.coerce.boolean().default(true),
+  adjust_for_time: z.coerce.boolean().default(true),
+  beginner_explanations: z.coerce.boolean().default(false),
+  emphasize_progress_analytics: z.coerce.boolean().default(true)
 });
+
+function primaryEquipmentAccess(equipment: string[]) {
+  if (equipment.includes("bodyweight")) return "bodyweight";
+  if (equipment.includes("dumbbells-only")) return "dumbbells-only";
+  if (equipment.includes("home-gym")) return "home-gym";
+  return "full-gym";
+}
+
+function preferredLengthToMinutes(value: string) {
+  if (value === "75-plus") return 75;
+  return Number(value) || 45;
+}
 
 export async function saveOnboardingAction(formData: FormData) {
   const parsed = onboardingSchema.safeParse({
     primary_goal: formData.get("primary_goal"),
+    physique_focus: formData.getAll("physique_focus"),
     experience_level: formData.get("experience_level"),
-    weekly_availability: formData.get("weekly_availability"),
-    typical_workout_length: formData.get("typical_workout_length"),
-    equipment_access: formData.get("equipment_access"),
-    biggest_struggle: formData.get("biggest_struggle"),
-    weak_points: formData.getAll("weak_points")
+    training_days_per_week: formData.get("training_days_per_week") ?? formData.get("weekly_availability"),
+    preferred_workout_length: formData.get("preferred_workout_length") ?? formData.get("typical_workout_length"),
+    equipment: formData.getAll("equipment").length ? formData.getAll("equipment") : [formData.get("equipment_access")].filter(Boolean),
+    weak_points: formData.getAll("weak_points"),
+    adjust_for_soreness: formData.get("adjust_for_soreness") === "true",
+    adjust_for_energy: formData.get("adjust_for_energy") === "true",
+    adjust_for_time: formData.get("adjust_for_time") === "true",
+    beginner_explanations: formData.get("beginner_explanations") === "true",
+    emphasize_progress_analytics: formData.get("emphasize_progress_analytics") !== "false"
   });
 
   if (!parsed.success) {
     redirect(`/onboarding?error=${encodeURIComponent(parsed.error.errors[0]?.message ?? "Check your answers.")}`);
   }
 
-  if (!isSupabaseConfigured) {
-    redirect("/dashboard?demo=onboarding");
-  }
+  if (!isSupabaseConfigured) redirect("/workout?tutorial=1");
 
   const supabase = await createSupabaseServerClient();
   const {
@@ -94,6 +117,8 @@ export async function saveOnboardingAction(formData: FormData) {
   }
 
   const answer = parsed.data;
+  const equipmentAccess = primaryEquipmentAccess(answer.equipment);
+  const preferredMinutes = preferredLengthToMinutes(answer.preferred_workout_length);
 
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
@@ -102,10 +127,10 @@ export async function saveOnboardingAction(formData: FormData) {
       primary_goal: answer.primary_goal,
       experience_level: answer.experience_level,
       training_experience: answer.experience_level,
-      weekly_training_days: answer.weekly_availability,
-      preferred_workout_length: answer.typical_workout_length,
-      equipment_access: answer.equipment_access,
-      biggest_struggle: answer.biggest_struggle,
+      weekly_training_days: answer.training_days_per_week,
+      preferred_workout_length: preferredMinutes,
+      equipment_access: equipmentAccess,
+      biggest_struggle: "not-knowing-what-to-do",
       weak_points: answer.weak_points,
       updated_at: new Date().toISOString()
     },
@@ -121,10 +146,10 @@ export async function saveOnboardingAction(formData: FormData) {
       user_id: user.id,
       primary_goal: answer.primary_goal,
       experience_level: answer.experience_level,
-      weekly_availability: answer.weekly_availability,
-      typical_workout_length: answer.typical_workout_length,
-      equipment_access: answer.equipment_access,
-      biggest_struggle: answer.biggest_struggle,
+      weekly_availability: answer.training_days_per_week,
+      typical_workout_length: preferredMinutes,
+      equipment_access: equipmentAccess,
+      biggest_struggle: "not-knowing-what-to-do",
       weak_points: answer.weak_points,
       updated_at: new Date().toISOString()
     },
@@ -135,10 +160,67 @@ export async function saveOnboardingAction(formData: FormData) {
     redirect(`/onboarding?error=${encodeURIComponent(error.message)}`);
   }
 
+  const { error: fitnessProfileError } = await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      primary_goal: answer.primary_goal,
+      physique_focus: answer.physique_focus,
+      experience_level: answer.experience_level,
+      training_days_per_week: answer.training_days_per_week,
+      preferred_workout_length: answer.preferred_workout_length,
+      equipment: answer.equipment,
+      weak_points: answer.weak_points,
+      adjust_for_soreness: answer.adjust_for_soreness,
+      adjust_for_energy: answer.adjust_for_energy,
+      adjust_for_time: answer.adjust_for_time,
+      beginner_explanations: answer.beginner_explanations,
+      emphasize_progress_analytics: answer.emphasize_progress_analytics,
+      onboarding_completed: true,
+      onboarding_skipped: false,
+      tutorial_completed: false,
+      checklist_progress: {
+        completedProfile: true
+      },
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (fitnessProfileError) {
+    redirect(`/onboarding?error=${encodeURIComponent(fitnessProfileError.message)}`);
+  }
+
   revalidatePath("/dashboard");
   revalidatePath("/profile");
+  revalidatePath("/workout");
+  revalidatePath("/progress");
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  redirect("/workout?tutorial=1");
+}
+
+export async function skipOnboardingAction() {
+  if (!isSupabaseConfigured) redirect("/workout");
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      onboarding_completed: true,
+      onboarding_skipped: true,
+      tutorial_completed: true,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  revalidatePath("/workout");
+  redirect("/workout");
 }
 
 const profileSchema = z.object({
@@ -346,6 +428,24 @@ export async function generateAdaptiveWorkoutAction(
     };
   }
 
+  const { data: profile } = await supabase
+    .from("user_fitness_profiles")
+    .select("checklist_progress")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const checklist = (profile?.checklist_progress ?? {}) as Record<string, unknown>;
+  await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      checklist_progress: {
+        ...checklist,
+        generatedFirstWorkout: true
+      },
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
   revalidatePath("/workout");
   revalidatePath("/dashboard");
 
@@ -414,9 +514,46 @@ export async function updateDailyWorkoutStatusAction(
     return { ok: false, message: result.error, debugMessage: result.debugMessage ?? `Save failed: ${result.error}` };
   }
 
+  if (parsed.data === "completed" && result.record) {
+    const historyResult = await persistCompletedDailyWorkoutHistory({
+      supabase,
+      userId: user.id,
+      dailyWorkout: result.record
+    });
+
+    if (!historyResult.ok) {
+      return {
+        ok: false,
+        message: `Workout was marked complete, but Progress did not sync yet: ${historyResult.message}`,
+        dailyWorkout: result.record,
+        debugMessage: result.debugMessage
+      };
+    }
+
+    const { data: profile } = await supabase
+      .from("user_fitness_profiles")
+      .select("checklist_progress")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const checklist = (profile?.checklist_progress ?? {}) as Record<string, unknown>;
+    await supabase.from("user_fitness_profiles").upsert(
+      {
+        user_id: user.id,
+        checklist_progress: {
+          ...checklist,
+          completedFirstWorkout: true,
+          generatedFirstWorkout: true
+        },
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "user_id" }
+    );
+  }
+
   revalidatePath("/workout");
   revalidatePath("/dashboard");
   revalidatePath("/history");
+  revalidatePath("/progress");
 
   const labels: Record<DailyWorkoutStatus, string> = {
     planned: "Workout moved back to planned.",
@@ -507,8 +644,27 @@ export async function updateProfileAction(
     };
   }
 
+  const { data: fitnessProfile } = await supabase
+    .from("user_fitness_profiles")
+    .select("checklist_progress")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const checklist = (fitnessProfile?.checklist_progress ?? {}) as Record<string, unknown>;
+  await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      checklist_progress: {
+        ...checklist,
+        completedProfile: true
+      },
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
   revalidatePath("/profile");
   revalidatePath("/dashboard");
+  revalidatePath("/workout");
   revalidatePath("/", "layout");
   return {
     ok: true,
@@ -564,6 +720,313 @@ function jsonSafe(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
+const prHistorySchema = z.object({
+  lift: z.enum(mainPRLifts),
+  date: z.string().min(1, "Choose a date."),
+  oneRepMax: z.coerce.number().positive("Enter a positive one-rep max."),
+  unit: z.enum(["lb", "kg"]).default("lb"),
+  notes: z.string().trim().max(240, "Keep notes under 240 characters.").optional()
+});
+
+const optionalMetricNumber = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? null : value),
+  z.coerce.number().nullable()
+);
+
+const physiqueMeasurementSchema = z.object({
+  date: z.string().min(1, "Choose a date."),
+  weight: optionalMetricNumber,
+  waist: optionalMetricNumber,
+  chest: optionalMetricNumber,
+  shoulders: optionalMetricNumber,
+  arms: optionalMetricNumber,
+  thighs: optionalMetricNumber,
+  hipsGlutes: optionalMetricNumber,
+  bodyFat: optionalMetricNumber
+});
+
+const recoveryLogSchema = z.object({
+  date: z.string().min(1, "Choose a date."),
+  sleepHours: z.coerce.number().min(0).max(14),
+  energy: z.coerce.number().min(1).max(10),
+  soreness: z.coerce.number().min(1).max(10),
+  stress: z.coerce.number().min(1).max(10),
+  workoutRpe: z.coerce.number().min(1).max(10)
+});
+
+function mapPrRow(row: Record<string, unknown>): PRHistoryEntry {
+  return {
+    id: String(row.id),
+    lift: String(row.lift),
+    date: String(row.date),
+    oneRepMax: Number(row.one_rep_max),
+    unit: row.unit === "kg" ? "kg" : "lb",
+    notes: typeof row.notes === "string" ? row.notes : undefined,
+    createdAt: String(row.created_at)
+  };
+}
+
+function mapPhysiqueRow(row: Record<string, unknown>): PhysiqueMeasurementEntry {
+  return {
+    id: String(row.id),
+    date: String(row.date),
+    weight: typeof row.weight === "number" ? row.weight : null,
+    waist: typeof row.waist === "number" ? row.waist : null,
+    chest: typeof row.chest === "number" ? row.chest : null,
+    shoulders: typeof row.shoulders === "number" ? row.shoulders : null,
+    arms: typeof row.arms === "number" ? row.arms : null,
+    thighs: typeof row.thighs === "number" ? row.thighs : null,
+    hipsGlutes: typeof row.hips_glutes === "number" ? row.hips_glutes : null,
+    bodyFat: typeof row.body_fat === "number" ? row.body_fat : null
+  };
+}
+
+function mapRecoveryRow(row: Record<string, unknown>): RecoveryLogEntry {
+  return {
+    id: String(row.id),
+    date: String(row.date),
+    sleepHours: Number(row.sleep_hours),
+    energy: Number(row.energy),
+    soreness: Number(row.soreness),
+    stress: Number(row.stress),
+    workoutRpe: Number(row.workout_rpe),
+    score: Number(row.score)
+  };
+}
+
+export async function savePrHistoryEntryAction(input: unknown): Promise<EntryActionResult<PRHistoryEntry>> {
+  const parsed = prHistorySchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.errors[0]?.message ?? "Check that PR entry." };
+  }
+
+  if (!isSupabaseConfigured) {
+    return { ok: false, message: "Connect Supabase to sync PRs to your account." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Log in again to save this PR." };
+  }
+
+  const entry = parsed.data;
+  const { data, error } = await supabase
+    .from("pr_history")
+    .upsert(
+      {
+        user_id: user.id,
+        lift: entry.lift,
+        date: entry.date,
+        one_rep_max: Math.round(entry.oneRepMax * 10) / 10,
+        unit: entry.unit,
+        notes: entry.notes || null,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "user_id,lift,date" }
+    )
+    .select("id, lift, date, one_rep_max, unit, notes, created_at")
+    .single();
+
+  if (error || !data) {
+    return { ok: false, message: error?.message ?? "We could not save that PR yet." };
+  }
+
+  const { data: profile } = await supabase
+    .from("user_fitness_profiles")
+    .select("checklist_progress")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const checklist = (profile?.checklist_progress ?? {}) as Record<string, unknown>;
+  await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      checklist_progress: {
+        ...checklist,
+        loggedFirstPr: true
+      },
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  revalidatePath("/progress");
+  revalidatePath("/workout");
+  return { ok: true, message: `${entry.lift} PR saved to your account.`, entry: mapPrRow(data as Record<string, unknown>) };
+}
+
+export async function savePhysiqueMeasurementAction(input: unknown): Promise<EntryActionResult<PhysiqueMeasurementEntry>> {
+  const parsed = physiqueMeasurementSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.errors[0]?.message ?? "Check that measurement." };
+  }
+
+  if (!isSupabaseConfigured) {
+    return { ok: false, message: "Connect Supabase to sync measurements to your account." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Log in again to save measurements." };
+  }
+
+  const entry = parsed.data;
+  const { data, error } = await supabase
+    .from("physique_measurements")
+    .upsert(
+      {
+        user_id: user.id,
+        date: entry.date,
+        weight: entry.weight,
+        waist: entry.waist,
+        chest: entry.chest,
+        shoulders: entry.shoulders,
+        arms: entry.arms,
+        thighs: entry.thighs,
+        hips_glutes: entry.hipsGlutes,
+        body_fat: entry.bodyFat,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "user_id,date" }
+    )
+    .select("id, date, weight, waist, chest, shoulders, arms, thighs, hips_glutes, body_fat")
+    .single();
+
+  if (error || !data) {
+    return { ok: false, message: error?.message ?? "We could not save those measurements yet." };
+  }
+
+  revalidatePath("/progress");
+  return { ok: true, message: "Physique metrics saved to your account.", entry: mapPhysiqueRow(data as Record<string, unknown>) };
+}
+
+export async function saveRecoveryLogAction(input: unknown): Promise<EntryActionResult<RecoveryLogEntry>> {
+  const parsed = recoveryLogSchema.safeParse(input);
+
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.errors[0]?.message ?? "Check that recovery log." };
+  }
+
+  if (!isSupabaseConfigured) {
+    return { ok: false, message: "Connect Supabase to sync recovery logs to your account." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Log in again to save recovery." };
+  }
+
+  const entry = parsed.data;
+  const score = calculateRecoveryScore(entry);
+  const { data, error } = await supabase
+    .from("recovery_logs")
+    .upsert(
+      {
+        user_id: user.id,
+        date: entry.date,
+        sleep_hours: entry.sleepHours,
+        energy: entry.energy,
+        soreness: entry.soreness,
+        stress: entry.stress,
+        workout_rpe: entry.workoutRpe,
+        score,
+        updated_at: new Date().toISOString()
+      },
+      { onConflict: "user_id,date" }
+    )
+    .select("id, date, sleep_hours, energy, soreness, stress, workout_rpe, score")
+    .single();
+
+  if (error || !data) {
+    return { ok: false, message: error?.message ?? "We could not save that recovery log yet." };
+  }
+
+  revalidatePath("/progress");
+  return { ok: true, message: "Recovery log saved to your account.", entry: mapRecoveryRow(data as Record<string, unknown>) };
+}
+
+export async function completeTutorialAction(): Promise<ActionResult> {
+  if (!isSupabaseConfigured) return { ok: true, message: "Tutorial completed on this device." };
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return { ok: false, message: "Log in again to update tutorial status." };
+
+  const { error } = await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      tutorial_completed: true,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) return { ok: false, message: error.message };
+  revalidatePath("/workout");
+  revalidatePath("/settings");
+  return { ok: true, message: "Tutorial completed." };
+}
+
+export async function markChecklistItemAction(item: string): Promise<ActionResult> {
+  const allowed = new Set([
+    "completedProfile",
+    "generatedFirstWorkout",
+    "openedInstruction",
+    "completedFirstWorkout",
+    "loggedFirstPr",
+    "visitedProgress"
+  ]);
+
+  if (!allowed.has(item)) return { ok: false, message: "Checklist item is not supported." };
+  if (!isSupabaseConfigured) return { ok: true, message: "Checklist updated on this device." };
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return { ok: false, message: "Log in again to update checklist." };
+
+  const { data: profile } = await supabase
+    .from("user_fitness_profiles")
+    .select("checklist_progress")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const current = (profile?.checklist_progress ?? {}) as Record<string, unknown>;
+  const { error } = await supabase.from("user_fitness_profiles").upsert(
+    {
+      user_id: user.id,
+      checklist_progress: {
+        ...current,
+        [item]: true
+      },
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) return { ok: false, message: error.message };
+  revalidatePath("/workout");
+  revalidatePath("/progress");
+  return { ok: true, message: "Checklist updated." };
+}
+
 function shouldRetryLegacyWorkoutInsert(error: { code?: string; message?: string } | null) {
   if (!error) return false;
   return (
@@ -572,6 +1035,121 @@ function shouldRetryLegacyWorkoutInsert(error: { code?: string; message?: string
     error.message?.toLowerCase().includes("schema cache") ||
     error.message?.toLowerCase().includes("column")
   );
+}
+
+async function persistCompletedDailyWorkoutHistory({
+  supabase,
+  userId,
+  dailyWorkout
+}: {
+  supabase: SupabaseServerClient;
+  userId: string;
+  dailyWorkout: DailyWorkoutRecord;
+}): Promise<ActionResult> {
+  const workout = dailyWorkout.workout;
+  const input = dailyWorkout.inputSnapshot;
+
+  const { data: existingWorkout, error: existingError } = await supabase
+    .from("workouts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("workout_date", dailyWorkout.workoutDate)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError && !shouldRetryLegacyWorkoutInsert(existingError)) {
+    return { ok: false, message: existingError.message };
+  }
+
+  let workoutId = (existingWorkout as { id?: string } | null)?.id ?? null;
+
+  if (!workoutId) {
+    const workoutInsert = {
+      user_id: userId,
+      workout_name: workout.name,
+      duration: workout.duration,
+      focus: workout.focus,
+      intensity: workout.intensity,
+      energy: input.energy,
+      soreness: input.soreness,
+      time_available: input.timeAvailable,
+      equipment: input.equipment,
+      gym_crowding: input.crowding,
+      body_focus: input.bodyFocus,
+      warmup: workout.warmup,
+      why_it_fits: workout.why,
+      condensed_version: workout.condensed,
+      completed_exercises: workout.exercises.length,
+      workout_date: dailyWorkout.workoutDate,
+      readiness_score: workout.readinessScore ?? null,
+      training_dose: workout.trainingDose ?? workout.intensity,
+      input_snapshot: jsonSafe(input),
+      workout_json: jsonSafe(workout),
+      explanation: workout.explanation?.whyThisWorkout ?? workout.why.join("\n")
+    };
+
+    const { data: insertedWorkout, error: workoutError } = await supabase
+      .from("workouts")
+      .insert(workoutInsert)
+      .select("id")
+      .single();
+
+    if (workoutError || !insertedWorkout) {
+      return { ok: false, message: workoutError?.message ?? "Completed workout could not be added to history." };
+    }
+
+    workoutId = (insertedWorkout as { id: string }).id;
+
+    const { error: exerciseError } = await supabase.from("workout_exercises").insert(
+      workout.exercises.map((exercise, index) => ({
+        user_id: userId,
+        workout_id: workoutId,
+        exercise_order: index + 1,
+        name: exercise.name,
+        muscle_group: exercise.muscleGroup,
+        equipment: exercise.equipment,
+        sets: exercise.sets,
+        reps: exercise.reps,
+        rest: exercise.rest,
+        cue: exercise.cue,
+        substitution: exercise.substitution
+      }))
+    );
+
+    if (exerciseError) {
+      return { ok: false, message: exerciseError.message };
+    }
+  }
+
+  const { data: existingLog, error: logLookupError } = await supabase
+    .from("workout_logs")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("workout_id", workoutId)
+    .maybeSingle();
+
+  if (logLookupError) {
+    return { ok: false, message: logLookupError.message };
+  }
+
+  if (!existingLog) {
+    const { error: logError } = await supabase.from("workout_logs").insert({
+      user_id: userId,
+      workout_id: workoutId,
+      completed_at: new Date().toISOString(),
+      duration: workout.duration,
+      focus: workout.focus,
+      energy: input.energy,
+      soreness: input.soreness
+    });
+
+    if (logError) {
+      return { ok: false, message: logError.message };
+    }
+  }
+
+  return { ok: true, message: "Workout completed and synced to Progress." };
 }
 
 export async function saveWorkoutAction(
@@ -688,5 +1266,6 @@ export async function saveWorkoutAction(
 
   revalidatePath("/history");
   revalidatePath("/dashboard");
+  revalidatePath("/progress");
   return { ok: true, message: "Workout saved. Nice, real-life consistency." };
 }

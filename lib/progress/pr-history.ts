@@ -65,27 +65,32 @@ export function persistPRHistory(storageKey: string, entries: PRHistoryEntry[]) 
   window.localStorage.setItem(storageKey, JSON.stringify(sortByDateAscending(entries)));
 }
 
-export function savePRHistoryEntry(storageKey: string, entry: PRHistoryEntry) {
-  const entries = getPRHistory(storageKey);
+export function mergePRHistoryEntry(entries: PRHistoryEntry[], entry: PRHistoryEntry) {
   const existingIndex = entries.findIndex(
-    (current) => current.lift === entry.lift && current.date === entry.date && current.unit === entry.unit
+    (current) => current.lift === entry.lift && current.date === entry.date
   );
-  const next =
+
+  return sortByDateAscending(
     existingIndex >= 0
       ? entries.map((current, index) =>
           index === existingIndex
             ? {
                 ...current,
                 oneRepMax: entry.oneRepMax,
+                unit: entry.unit,
                 notes: entry.notes,
                 createdAt: current.createdAt
               }
             : current
         )
-      : [...entries, entry];
+      : [...entries, entry]
+  );
+}
 
+export function savePRHistoryEntry(storageKey: string, entry: PRHistoryEntry) {
+  const next = mergePRHistoryEntry(getPRHistory(storageKey), entry);
   persistPRHistory(storageKey, next);
-  return sortByDateAscending(next);
+  return next;
 }
 
 export function getEntriesForLift(entries: PRHistoryEntry[], lift: string, unit: "lb" | "kg" = "lb") {

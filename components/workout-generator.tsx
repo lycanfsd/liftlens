@@ -18,9 +18,11 @@ import type { LucideIcon } from "lucide-react";
 
 import {
   generateAdaptiveWorkoutAction,
-  saveWorkoutAction,
+  markChecklistItemAction,
   updateDailyWorkoutStatusAction
 } from "@/app/app-actions";
+import { NewUserChecklist, type ChecklistProgress } from "@/components/new-user-checklist";
+import { TutorialOverlay } from "@/components/tutorial-overlay";
 import { CompletedTodayBanner, CompletionSuccessModal } from "@/components/workout-completion-celebration";
 import { WorkoutCard, type WorkoutViewMode } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
@@ -312,11 +314,19 @@ function StepLabel({ step, title, copy }: { step: number; title: string; copy?: 
 export function WorkoutGenerator({
   engineContext,
   initialDailyWorkout,
-  currentUserId
+  currentUserId,
+  showTutorialOnLoad = false,
+  onboardingCompleted = false,
+  onboardingMissingWithData = false,
+  checklistProgress = {}
 }: {
   engineContext?: Partial<WorkoutEngineContext>;
   initialDailyWorkout?: DailyWorkoutRecord | null;
   currentUserId?: string | null;
+  showTutorialOnLoad?: boolean;
+  onboardingCompleted?: boolean;
+  onboardingMissingWithData?: boolean;
+  checklistProgress?: ChecklistProgress;
 }) {
   const initialInput = initialDailyWorkout?.inputSnapshot ?? defaultInput;
   const {
@@ -332,13 +342,15 @@ export function WorkoutGenerator({
   const [input, setInput] = useState<DailyCheckIn>(initialInput);
   const [workout, setWorkout] = useState<GeneratedWorkout>(() => initialDailyWorkout?.workout ?? generateWorkout(initialInput, engineContext));
   const [message, setMessage] = useState(
-    initialDailyWorkout ? "Today's workout loaded." : "Check in once. LiftLens will save today's plan after generation."
+    initialDailyWorkout ? "Today's workout loaded." : "Check in once. NOVYRA will save today's plan after generation."
   );
   const [viewMode, setViewMode] = useState<WorkoutViewMode>("simple");
   const [hasGenerated, setHasGenerated] = useState(Boolean(initialDailyWorkout));
   const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkout);
   const [showRegenerateOptions, setShowRegenerateOptions] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(showTutorialOnLoad);
+  const [openedInstruction, setOpenedInstruction] = useState(Boolean(checklistProgress.openedInstruction));
   const [isPending, startTransition] = useTransition();
 
   const fitScore = useMemo(() => {
@@ -373,6 +385,13 @@ export function WorkoutGenerator({
 
   function closeCompletionModal() {
     setShowCompletionModal(false);
+  }
+
+  function noteInstructionOpened() {
+    setOpenedInstruction(true);
+    startTransition(async () => {
+      await markChecklistItemAction("openedInstruction");
+    });
   }
 
   function updateInput<T extends keyof DailyCheckIn>(key: T, value: DailyCheckIn[T]) {
@@ -485,13 +504,13 @@ export function WorkoutGenerator({
 
         const statusResult = await updateDailyWorkoutStatusAction("completed", dailyWorkout?.id);
         if (!statusResult.ok) {
+          if (statusResult.dailyWorkout) setDailyWorkout(statusResult.dailyWorkout, "backend");
           setMessage(statusResult.message);
           return;
         }
         if (statusResult.dailyWorkout) setDailyWorkout(statusResult.dailyWorkout, "backend");
 
-        const saveResult = await saveWorkoutAction(workout, input);
-        setMessage(saveResult.ok ? "Workout completed. Momentum protected." : saveResult.message);
+        setMessage(statusResult.message);
         setShowCompletionModal(true);
       } catch {
         setMessage("We could not complete that yet. Your workout is still here, and you can try again in a moment.");
@@ -512,12 +531,67 @@ export function WorkoutGenerator({
   const isTodayWorkoutCompleted =
     dailyWorkout?.status === "completed" && dailyWorkout.workoutDate === getTodayWorkoutDateKey();
   const showCompletedBanner = isTodayWorkoutCompleted && !showCompletionModal;
+  const nextBestStep =
+    input.soreness >= 4
+      ? "Tomorrow: choose a recovery-friendly session or keep the first two sets easy."
+      : input.energy <= 2
+        ? "Tomorrow: protect momentum with a short session before adding intensity."
+        : workout.focus.toLowerCase().includes("upper")
+          ? "Tomorrow: bias lower body or conditioning so today's work can recover."
+          : "Tomorrow: train the next major pattern, then add one weak-point accessory if recovery feels good.";
+  const checklistInitialProgress = useMemo(
+    () => ({
+      ...checklistProgress,
+      completedProfile: checklistProgress.completedProfile || onboardingCompleted,
+      openedInstruction
+    }),
+    [checklistProgress, onboardingCompleted, openedInstruction]
+  );
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <CompletionSuccessModal open={showCompletionModal} onClose={closeCompletionModal} />
+      <TutorialOverlay open={showTutorial} onClose={() => setShowTutorial(false)} />
 
       <CompletedTodayBanner show={showCompletedBanner} />
+
+      {!onboardingCompleted && onboardingMissingWithData ? (
+        <Card className="border-primary/20 bg-primary/10">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-primary">Personalize NOVYRA</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                You already have training data. Add your goal, equipment, and weak points when you want sharper recommendations.
+              </p>
+            </div>
+            <Button asChild className="w-full sm:w-auto">
+              <a href="/onboarding">Personalize</a>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <NewUserChecklist
+        initialProgress={checklistInitialProgress}
+        generatedWorkout={hasGenerated}
+        completedWorkout={isTodayWorkoutCompleted}
+        userId={currentUserId}
+      />
+
+      {isTodayWorkoutCompleted ? (
+        <Card className="border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.13),transparent_38%),rgba(255,255,255,0.035)]">
+          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-primary">Next best step</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Tomorrow&apos;s recommendation</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{nextBestStep}</p>
+            </div>
+            <span className="w-fit rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              Progress synced
+            </span>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {dailyWorkout && !showCheckIn ? (
         <Card className="border-primary/20 bg-primary/10">
@@ -862,6 +936,7 @@ export function WorkoutGenerator({
             workout={workout}
             onStart={startWorkout}
             onComplete={completeWorkout}
+            onInstructionOpen={noteInstructionOpened}
             saving={isPending}
             message={message}
             viewMode={viewMode}
@@ -871,9 +946,9 @@ export function WorkoutGenerator({
           <Card className="border-dashed border-white/15 bg-white/[0.025]">
             <CardContent className="grid gap-4 p-6 sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
-                <p className="text-lg font-semibold text-white">Ready when you are.</p>
+                <p className="text-lg font-semibold text-white">Generate your first workout to start today&apos;s plan.</p>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Fill in the check-in, then generate a plan. LiftLens will save it for today and reload it after refresh.
+                  Tell NOVYRA what today looks like, then build a plan around your time, recovery, and equipment.
                 </p>
               </div>
               <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-primary">

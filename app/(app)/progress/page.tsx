@@ -2,12 +2,15 @@ import { BarChart3 } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
 import { ProgressAnalyticsCenter } from "@/components/progress-analytics-center";
+import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
+import type { PRHistoryEntry } from "@/lib/progress/pr-history";
 import {
   buildProgressAnalytics,
   demoProgressInputs,
   type ExercisePerformanceEntry,
   type ProgressWorkoutLog
 } from "@/lib/progress/progress-analytics";
+import type { RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -30,6 +33,48 @@ type WorkoutExerciseRow = {
   reps: string | null;
 };
 
+type PRHistoryRow = {
+  id: string;
+  lift: string;
+  date: string;
+  one_rep_max: number;
+  unit: "lb" | "kg" | null;
+  notes: string | null;
+  created_at: string;
+};
+
+type PhysiqueMeasurementRow = {
+  id: string;
+  date: string;
+  weight: number | null;
+  waist: number | null;
+  chest: number | null;
+  shoulders: number | null;
+  arms: number | null;
+  thighs: number | null;
+  hips_glutes: number | null;
+  body_fat: number | null;
+};
+
+type RecoveryLogRow = {
+  id: string;
+  date: string;
+  sleep_hours: number;
+  energy: number;
+  soreness: number;
+  stress: number;
+  workout_rpe: number;
+  score: number;
+};
+
+const emptyAccountMetrics = {
+  prEntries: [] as PRHistoryEntry[],
+  physiqueEntries: [] as PhysiqueMeasurementEntry[],
+  recoveryEntries: [] as RecoveryLogEntry[],
+  profileGoal: null as string | null,
+  weakPoints: [] as string[]
+};
+
 function parseReps(value: string | null) {
   if (!value) return 8;
   const firstNumber = value.match(/\d+/)?.[0];
@@ -38,7 +83,7 @@ function parseReps(value: string | null) {
 
 async function getProgressAnalytics() {
   if (!isSupabaseConfigured) {
-    return { analytics: buildProgressAnalytics(demoProgressInputs()), userId: null };
+    return { analytics: buildProgressAnalytics(demoProgressInputs()), userId: null, ...emptyAccountMetrics };
   }
 
   const supabase = await createSupabaseServerClient();
@@ -47,21 +92,44 @@ async function getProgressAnalytics() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { analytics: buildProgressAnalytics(demoProgressInputs()), userId: null };
+    return { analytics: buildProgressAnalytics(demoProgressInputs()), userId: null, ...emptyAccountMetrics };
   }
 
-  const [{ data: profile }, { data: logs, error: logsError }] = await Promise.all([
-    supabase.from("profiles").select("weekly_training_days").eq("user_id", user.id).maybeSingle(),
+  const [
+    { data: profile },
+    { data: logs, error: logsError },
+    { data: prRows },
+    { data: physiqueRows },
+    { data: recoveryRows }
+  ] = await Promise.all([
+    supabase.from("profiles").select("weekly_training_days, primary_goal, weak_points").eq("user_id", user.id).maybeSingle(),
     supabase
       .from("workout_logs")
       .select("workout_id, completed_at, duration, focus, energy, soreness")
       .eq("user_id", user.id)
       .order("completed_at", { ascending: false })
-      .limit(120)
+      .limit(120),
+    supabase
+      .from("pr_history")
+      .select("id, lift, date, one_rep_max, unit, notes, created_at")
+      .eq("user_id", user.id)
+      .order("date", { ascending: true }),
+    supabase
+      .from("physique_measurements")
+      .select("id, date, weight, waist, chest, shoulders, arms, thighs, hips_glutes, body_fat")
+      .eq("user_id", user.id)
+      .order("date", { ascending: false })
+      .limit(100),
+    supabase
+      .from("recovery_logs")
+      .select("id, date, sleep_hours, energy, soreness, stress, workout_rpe, score")
+      .eq("user_id", user.id)
+      .order("date", { ascending: false })
+      .limit(100)
   ]);
 
   if (logsError) {
-    return { analytics: buildProgressAnalytics(demoProgressInputs()), userId: user.id };
+    return { analytics: buildProgressAnalytics({ logs: [], exercises: [], weeklyTarget: 5 }), userId: user.id, ...emptyAccountMetrics };
   }
 
   const logRows = ((logs ?? []) as WorkoutLogRow[]).filter((row) => row.completed_at);
@@ -97,8 +165,39 @@ async function getProgressAnalytics() {
       }));
   }
 
-  const profileRow = (profile ?? {}) as { weekly_training_days?: unknown };
+  const profileRow = (profile ?? {}) as { weekly_training_days?: unknown; primary_goal?: unknown; weak_points?: unknown };
   const weeklyTarget = typeof profileRow.weekly_training_days === "number" ? profileRow.weekly_training_days : 5;
+  const prEntries: PRHistoryEntry[] = ((prRows ?? []) as PRHistoryRow[]).map((row) => ({
+    id: row.id,
+    lift: row.lift,
+    date: row.date,
+    oneRepMax: row.one_rep_max,
+    unit: row.unit === "kg" ? "kg" : "lb",
+    notes: row.notes ?? undefined,
+    createdAt: row.created_at
+  }));
+  const physiqueEntries: PhysiqueMeasurementEntry[] = ((physiqueRows ?? []) as PhysiqueMeasurementRow[]).map((row) => ({
+    id: row.id,
+    date: row.date,
+    weight: row.weight,
+    waist: row.waist,
+    chest: row.chest,
+    shoulders: row.shoulders,
+    arms: row.arms,
+    thighs: row.thighs,
+    hipsGlutes: row.hips_glutes,
+    bodyFat: row.body_fat
+  }));
+  const recoveryEntries: RecoveryLogEntry[] = ((recoveryRows ?? []) as RecoveryLogRow[]).map((row) => ({
+    id: row.id,
+    date: row.date,
+    sleepHours: row.sleep_hours,
+    energy: row.energy,
+    soreness: row.soreness,
+    stress: row.stress,
+    workoutRpe: row.workout_rpe,
+    score: row.score
+  }));
 
   return {
     analytics: buildProgressAnalytics({
@@ -106,12 +205,17 @@ async function getProgressAnalytics() {
       exercises,
       weeklyTarget
     }),
-    userId: user.id
+    userId: user.id,
+    prEntries,
+    physiqueEntries,
+    recoveryEntries,
+    profileGoal: typeof profileRow.primary_goal === "string" ? profileRow.primary_goal : null,
+    weakPoints: Array.isArray(profileRow.weak_points) ? profileRow.weak_points.map(String) : []
   };
 }
 
 export default async function ProgressPage() {
-  const { analytics, userId } = await getProgressAnalytics();
+  const { analytics, userId, prEntries, physiqueEntries, recoveryEntries, profileGoal, weakPoints } = await getProgressAnalytics();
 
   return (
     <>
@@ -125,7 +229,15 @@ export default async function ProgressPage() {
           Physique signal center
         </div>
       </PageHeader>
-      <ProgressAnalyticsCenter analytics={analytics} userId={userId} />
+      <ProgressAnalyticsCenter
+        analytics={analytics}
+        userId={userId}
+        initialPrEntries={prEntries}
+        initialPhysiqueEntries={physiqueEntries}
+        initialRecoveryEntries={recoveryEntries}
+        profileGoal={profileGoal}
+        weakPoints={weakPoints}
+      />
     </>
   );
 }
