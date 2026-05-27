@@ -1,0 +1,23 @@
+{
+  "name": "Ulvori",
+  "short_name": "Ulvori",
+  "description": "Adaptive training for your dream physique.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#05070a",
+  "theme_color": "#05070a",
+  "icons": [
+    {
+      "src": "/brand/ulvori-app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/brand/ulvori-app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

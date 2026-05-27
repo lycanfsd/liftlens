@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import { normalizePlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -91,7 +92,7 @@ async function getProfilePageData(): Promise<ProfilePageData> {
     };
 
     return {
-      email: "demo@flexfit.ai",
+      email: "demo@ulvori.app",
       userId: null,
       avatarUrl: null,
       accountCreatedAt: null,
@@ -183,7 +184,7 @@ async function getProfilePageData(): Promise<ProfilePageData> {
   const rows = (logs ?? []) as WorkoutLogRow[];
 
   return {
-    email: user.email ?? (toStringValue(profileRow.email) || "FlexFit member"),
+    email: user.email ?? (toStringValue(profileRow.email) || `${APP_NAME} member`),
     userId: user.id,
     avatarUrl: toStringValue(profileRow.avatar_url) || null,
     accountCreatedAt: user.created_at ?? toStringValue(profileRow.created_at) ?? null,
@@ -201,7 +202,7 @@ export default async function ProfilePage() {
       <PageHeader
         eyebrow="Profile"
         title="Your fitness context, all in one place."
-        copy="Edit the details FlexFit uses to make workouts feel less generic and more like they belong to your actual week."
+        copy={`Edit the details ${APP_NAME} uses to make workouts feel less generic and more like they belong to your actual week.`}
       />
 
       <section className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
@@ -249,7 +250,7 @@ export default async function ProfilePage() {
               <ShieldCheck className="h-5 w-5" />
               <span className="text-sm font-semibold">Progress snapshot</span>
             </div>
-            <h2 className="mt-4 text-2xl font-semibold text-white">What FlexFit knows so far.</h2>
+            <h2 className="mt-4 text-2xl font-semibold text-white">What {APP_NAME} knows so far.</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               If this is still empty, no problem. Save a few workouts and the signal gets sharper.
             </p>

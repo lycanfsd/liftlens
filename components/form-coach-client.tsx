@@ -19,6 +19,7 @@ import { ProgressRing } from "@/components/progress-ring";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import { formCoachExercises, type FormCoachAnalysis, type FormCoachExercise } from "@/lib/form-coach";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -241,7 +242,7 @@ export function FormCoachClient({
 
   function validateVideo(file: File) {
     if (!file.type.startsWith("video/")) {
-      return "Choose a video file so FlexFit can analyze the set.";
+      return `Choose a video file so ${APP_NAME} can analyze the set.`;
     }
 
     if (file.size > MAX_VIDEO_SIZE) {
@@ -294,7 +295,7 @@ export function FormCoachClient({
       recorder.onstop = () => {
         const blobType = recorder.mimeType || "video/webm";
         const blob = new Blob(chunksRef.current, { type: blobType });
-        const file = new File([blob], `flexfit-form-${Date.now()}.webm`, { type: blobType });
+        const file = new File([blob], `ulvori-form-${Date.now()}.webm`, { type: blobType });
         stream.getTracks().forEach((track) => track.stop());
         cameraStreamRef.current = null;
         mediaRecorderRef.current = null;
@@ -337,7 +338,7 @@ export function FormCoachClient({
           return;
         }
 
-        setMessage("Sending key frames to FlexFit vision analysis...");
+        setMessage(`Sending key frames to ${APP_NAME} vision analysis...`);
         const response = await fetch("/api/form-coach/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -490,7 +491,7 @@ export function FormCoachClient({
         <CardContent className="flex gap-3 p-4">
           <ShieldCheck className="mt-1 h-5 w-5 shrink-0 text-amber-300" />
           <p className="text-sm leading-6 text-amber-50/90">
-            FlexFit Form Coach is educational and not a medical diagnosis. Stop if you feel sharp pain,
+            {APP_NAME} Form Coach is educational and not a medical diagnosis. Stop if you feel sharp pain,
             dizziness, chest pain, or symptoms of injury. For injury concerns, consult a qualified clinician
             or coach.
           </p>
@@ -573,7 +574,7 @@ export function FormCoachClient({
                 <Film className="h-7 w-7" />
               </div>
               <p className="mt-4 font-semibold text-white">
-                {videoFile ? videoFile.name : "Add a video for FlexFit to review"}
+                {videoFile ? videoFile.name : `Add a video for ${APP_NAME} to review`}
               </p>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">
                 Video files only. Max 50MB for this MVP.
@@ -637,7 +638,7 @@ export function FormCoachClient({
           <CardContent className="p-5 sm:p-6">
             <div className="flex items-center gap-2 text-primary">
               <ShieldCheck className="h-5 w-5" />
-              <span className="text-sm font-semibold">What FlexFit checks first</span>
+              <span className="text-sm font-semibold">What {APP_NAME} checks first</span>
             </div>
             <div className="mt-5 space-y-3">
               {[

@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { SafetyDisclaimer } from "@/components/safety-disclaimer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export default function SettingsPage() {
@@ -74,7 +75,7 @@ export default function SettingsPage() {
                 <Link href="/profile">Open profile</Link>
               </Button>
               <Button asChild variant="secondary">
-                <Link href="/dashboard?tutorial=1">Replay app tour</Link>
+                <Link href="/dashboard?tutorial=1">Replay {APP_NAME} tour</Link>
               </Button>
               <form action={logoutAction}>
                 <Button type="submit" variant="outline" className="w-full sm:w-auto">

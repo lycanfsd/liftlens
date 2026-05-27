@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { APP_NAME } from "@/lib/brand";
 import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
 import { metricChange, physiqueMetricLabels } from "@/lib/progress/physique-metrics";
 import {
@@ -53,8 +54,11 @@ import type { RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
 import { calculateRecoveryScore, recoveryInterpretation } from "@/lib/progress/recovery-metrics";
 import { cn } from "@/lib/utils";
 
-const physiqueStorageKey = "flexfit-physique-measurements";
-const recoveryStorageKey = "flexfit-recovery-logs";
+// Keep old FlexFit local keys as read-only fallbacks so local progress logs survive the Ulvori rebrand.
+const legacyPhysiqueStorageKey = "flexfit-physique-measurements";
+const legacyRecoveryStorageKey = "flexfit-recovery-logs";
+const physiqueStorageKey = "ulvori-physique-measurements";
+const recoveryStorageKey = "ulvori-recovery-logs";
 const polishedCardHover = "transition duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-white/[0.055]";
 const insetPanel = "rounded-2xl border border-white/10 bg-white/[0.035]";
 
@@ -91,11 +95,11 @@ function safeNumber(value: string) {
   return Number.isFinite(parsed) && value !== "" ? parsed : null;
 }
 
-function loadLocalArray<T>(key: string): T[] {
+function loadLocalArray<T>(key: string, legacyKey?: string): T[] {
   if (typeof window === "undefined") return [];
 
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = window.localStorage.getItem(key) ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as T[]) : [];
@@ -146,12 +150,14 @@ function formatProfileLabel(value: string | null | undefined) {
 }
 
 function ProgressSection({
+  id,
   title,
   copy,
   children,
   action,
   tourId
 }: {
+  id?: string;
   title: string;
   copy?: string;
   children: React.ReactNode;
@@ -159,7 +165,7 @@ function ProgressSection({
   tourId?: string;
 }) {
   return (
-    <section data-tour={tourId} className="space-y-5 scroll-mt-24">
+    <section id={id} data-tour={tourId} className="space-y-5 scroll-mt-24">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex max-w-3xl gap-3">
           <span className="mt-1 h-9 w-1 rounded-full bg-primary/70 shadow-[0_0_20px_rgba(74,222,128,0.25)]" />
@@ -222,11 +228,11 @@ function ProgressTrajectoryCard({
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             <Sparkles className="h-3.5 w-3.5" />
-            Physique trajectory
+            This week
           </div>
           <h2 className="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Progress without noise.</h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-            The important signals are consistency, strength, recovery, and balanced volume. Everything else stays tucked away until it matters.
+            Start with the signals that move your physique: consistency, strength, recovery, and balanced volume. Details sit lower on the page.
           </p>
         </div>
 
@@ -792,6 +798,7 @@ function StrengthProgressAnalytics({
 
   return (
     <ProgressSection
+      id="strength-prs"
       tourId="strength-pr-tracker"
       title="Strength PRs"
       copy="Track your one-rep maxes and watch your strength trend upward."
@@ -984,7 +991,7 @@ function MuscleGroupVolumeAnalytics({ analytics }: { analytics: ProgressAnalytic
             <div>
               <p className="text-lg font-semibold text-white">Complete your first workout to unlock volume trends.</p>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                NOVYRA will count hard sets by muscle group and show whether your physique work is balanced.
+                {APP_NAME} will count hard sets by muscle group and show whether your physique work is balanced.
               </p>
               <Button asChild className="mt-5 w-full sm:w-auto">
                 <a href="/workout">Build today&apos;s workout</a>
@@ -1083,7 +1090,7 @@ function PhysiqueTracker({
   });
 
   useEffect(() => {
-    const loaded = accountSyncEnabled ? initialEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey);
+    const loaded = accountSyncEnabled ? initialEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey, legacyPhysiqueStorageKey);
     setEntries(loaded);
     onEntriesChange(loaded);
   }, [accountSyncEnabled, initialEntries, onEntriesChange]);
@@ -1133,7 +1140,7 @@ function PhysiqueTracker({
   }
 
   return (
-    <ProgressSection title="Physique Tracker" copy="Log the slow-moving physique markers. This stays local for now and is ready for a database adapter later.">
+    <ProgressSection title="Physique Tracker" copy="Log slow-moving physique markers and watch the trend, not the noise. Signed-in entries stay with your account.">
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className={polishedCardHover}>
           <CardContent className="p-5">
@@ -1276,7 +1283,7 @@ function RecoveryReadiness({
   });
 
   useEffect(() => {
-    const loaded = accountSyncEnabled ? initialEntries : loadLocalArray<RecoveryLogEntry>(recoveryStorageKey);
+    const loaded = accountSyncEnabled ? initialEntries : loadLocalArray<RecoveryLogEntry>(recoveryStorageKey, legacyRecoveryStorageKey);
     setEntries(loaded);
     if (loaded[0]) onScoreChange(loaded[0].score);
   }, [accountSyncEnabled, initialEntries, onScoreChange]);
@@ -1480,7 +1487,7 @@ export function ProgressAnalyticsCenter({
   const [physiqueEntries, setPhysiqueEntries] = useState<PhysiqueMeasurementEntry[]>([]);
 
   useEffect(() => {
-    setPhysiqueEntries(userId ? initialPhysiqueEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey));
+    setPhysiqueEntries(userId ? initialPhysiqueEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey, legacyPhysiqueStorageKey));
   }, [initialPhysiqueEntries, userId]);
 
   useEffect(() => {

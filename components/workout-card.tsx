@@ -19,6 +19,7 @@ import { ExerciseCard } from "@/components/exercise-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import type { DailyWorkoutStatus, GeneratedWorkout, InputImpact } from "@/lib/types";
 import { toTitleCase } from "@/lib/utils";
 
@@ -441,7 +442,7 @@ export function WorkoutCard({
           <Badge className="border-amber-300/20 bg-amber-300/10 text-amber-100">Plan needs a refresh</Badge>
           <h2 className="mt-4 text-2xl font-semibold text-white">Let&apos;s rebuild today&apos;s workout.</h2>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            The current plan is missing exercise data. No stress. Regenerate the session and LiftLens will rebuild it from your latest inputs.
+            The current plan is missing exercise data. No stress. Regenerate the session and {APP_NAME} will rebuild it from your latest inputs.
           </p>
           <Button asChild className="mt-5">
             <a href="/workout">Regenerate workout</a>

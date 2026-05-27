@@ -20,7 +20,12 @@ export type PRHistoryEntry = {
 };
 
 export function getPRStorageKey(userId?: string | null) {
-  return userId ? `flexfit-pr-history-${userId}` : "flexfit-pr-history-local";
+  return userId ? `ulvori-pr-history-${userId}` : "ulvori-pr-history-local";
+}
+
+function legacyPRStorageKey(storageKey: string) {
+  // Keep the old FlexFit key as a read-only fallback so local PR history survives the Ulvori rebrand.
+  return storageKey.replace("ulvori-pr-history", "flexfit-pr-history");
 }
 
 function isPRHistoryEntry(value: unknown): value is PRHistoryEntry {
@@ -50,7 +55,7 @@ export function getPRHistory(storageKey: string) {
   if (typeof window === "undefined") return [];
 
   try {
-    const raw = window.localStorage.getItem(storageKey);
+    const raw = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(legacyPRStorageKey(storageKey));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { APP_NAME } from "@/lib/brand";
 import { formCoachExercises, isFormCoachExercise, type FormCoachExercise } from "@/lib/form-coach";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -218,8 +219,7 @@ export async function POST(request: Request) {
       input: [
         {
           role: "system",
-          content:
-            "You are FlexFit AI Form Coach, a safety-first strength coach. Analyze only what is visible in the supplied video frames. Do not diagnose injuries or medical conditions. If the camera angle, crop, blur, or missing range of motion makes the analysis uncertain, clearly say so and ask the user to re-film from a side or front 45-degree angle. Return JSON only."
+          content: `You are ${APP_NAME} Form Coach, a safety-first strength coach. Analyze only what is visible in the supplied video frames. Do not diagnose injuries or medical conditions. If the camera angle, crop, blur, or missing range of motion makes the analysis uncertain, clearly say so and ask the user to re-film from a side or front 45-degree angle. Return JSON only.`
         },
         {
           role: "user",

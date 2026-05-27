@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Dumbbell, Gauge, Sparkles, Target } from 
 import { saveOnboardingAction, skipOnboardingAction } from "@/app/app-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 type OnboardingValues = {
@@ -221,7 +222,7 @@ export function OnboardingForm() {
       <aside className="h-fit rounded-2xl border border-white/10 bg-black/30 p-5 lg:sticky lg:top-8">
         <div className="flex items-center gap-2 text-primary">
           <Sparkles className="h-4 w-4" />
-          <span className="text-sm font-semibold">NOVYRA setup</span>
+          <span className="text-sm font-semibold">{APP_NAME} setup</span>
         </div>
         <h2 className="mt-4 text-2xl font-semibold text-white">Make the plan yours.</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">Fast setup. Better daily calls.</p>
@@ -259,7 +260,7 @@ export function OnboardingForm() {
                 <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/15 text-primary">
                   <Sparkles className="h-7 w-7" />
                 </span>
-                <h1 className="mt-6 text-3xl font-semibold text-white sm:text-4xl">Welcome to NOVYRA</h1>
+                <h1 className="mt-6 text-3xl font-semibold text-white sm:text-4xl">Welcome to {APP_NAME}</h1>
                 <p className="mt-3 text-lg text-muted-foreground">Your daily AI fitness coach for building your dream physique.</p>
                 <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
                   A few quick answers. Smarter workouts every day.
@@ -377,7 +378,7 @@ export function OnboardingForm() {
 
           {step === 7 ? (
             <>
-              <Header eyebrow="Recovery" title="How should NOVYRA adapt?" copy="Keep the daily plan useful." />
+              <Header eyebrow="Recovery" title={`How should ${APP_NAME} adapt?`} copy="Keep the daily plan useful." />
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
                 <Gauge className="h-4 w-4 text-primary" />
                 Adaptation preferences

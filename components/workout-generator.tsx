@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { APP_NAME } from "@/lib/brand";
 import {
   bodyFocusOptions,
   crowdingOptions,
@@ -332,7 +333,7 @@ export function WorkoutGenerator({
   const [input, setInput] = useState<DailyCheckIn>(initialInput);
   const [workout, setWorkout] = useState<GeneratedWorkout>(() => initialDailyWorkout?.workout ?? generateWorkout(initialInput, engineContext));
   const [message, setMessage] = useState(
-    initialDailyWorkout ? "Today's workout loaded." : "Check in once. NOVYRA will save today's plan after generation."
+    initialDailyWorkout ? "Today's workout loaded." : `Check in once. ${APP_NAME} will save today's plan after generation.`
   );
   const [viewMode, setViewMode] = useState<WorkoutViewMode>("simple");
   const [hasGenerated, setHasGenerated] = useState(Boolean(initialDailyWorkout));
@@ -513,7 +514,7 @@ export function WorkoutGenerator({
   }
 
   const showCheckIn = !hasGenerated || isEditingInputs;
-  const generateCopy = dailyWorkout ? "Update today's workout" : "Generate workout";
+  const generateCopy = dailyWorkout ? "Update today's workout" : "Build today's workout";
   const loadedStatusCopy =
     dailyWorkout?.status === "completed"
       ? "Completed"
@@ -533,6 +534,14 @@ export function WorkoutGenerator({
         : workout.focus.toLowerCase().includes("upper")
           ? "Tomorrow: bias lower body or conditioning so today's work can recover."
           : "Tomorrow: train the next major pattern, then add one weak-point accessory if recovery feels good.";
+  const activeNextMove =
+    input.soreness >= 4 || input.energy <= 2
+      ? "Keep intensity moderate today. Quality reps beat max effort."
+      : dailyWorkout?.status === "started"
+        ? "Finish the listed work, then tap Complete workout to lock in Progress."
+        : hasGenerated
+          ? "Start with exercise one. Control the reps before chasing load."
+          : "Check in once, then build today's workout.";
   return (
     <div data-tour="today-page" className="mx-auto max-w-6xl space-y-6">
       <CompletionSuccessModal open={showCompletionModal} onClose={closeCompletionModal} />
@@ -552,7 +561,22 @@ export function WorkoutGenerator({
             </span>
           </CardContent>
         </Card>
-      ) : null}
+      ) : (
+        <Card className="border-white/10 bg-white/[0.035]">
+          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-primary">Next best move</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">
+                {hasGenerated ? "Train the plan in front of you." : "Build the plan for the day you have."}
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{activeNextMove}</p>
+            </div>
+            <span className="w-fit rounded-full border border-white/10 bg-black/25 px-3 py-1 text-xs font-semibold text-muted-foreground">
+              Coach nudge
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       {dailyWorkout && !showCheckIn ? (
         <Card className="border-primary/20 bg-primary/10">
@@ -824,7 +848,7 @@ export function WorkoutGenerator({
           <section className="space-y-3">
             <StepLabel
               step={2}
-              title={dailyWorkout ? "Update workout" : "Generate workout"}
+              title={dailyWorkout ? "Update workout" : "Build today's workout"}
               copy={dailyWorkout ? "This replaces today's saved version and increments the version number." : "One tap turns the check-in into today's training dose."}
             />
             <Card
@@ -912,7 +936,7 @@ export function WorkoutGenerator({
               <div>
                 <p className="text-lg font-semibold text-white">Generate your first workout to start today&apos;s plan.</p>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  Tell NOVYRA what today looks like, then build a plan around your time, recovery, and equipment.
+                  Tell {APP_NAME} what today looks like, then build a plan around your time, recovery, and equipment.
                 </p>
               </div>
               <div className="grid h-16 w-16 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-primary">

@@ -2,6 +2,7 @@ import { BarChart3 } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
 import { ProgressAnalyticsCenter } from "@/components/progress-analytics-center";
+import { Button } from "@/components/ui/button";
 import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
 import type { PRHistoryEntry } from "@/lib/progress/pr-history";
 import {
@@ -323,9 +324,16 @@ export default async function ProgressPage() {
         title="Progress Analytics"
         copy="Track your consistency, strength, physique, and recovery over time."
       >
-        <div className="hidden rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary sm:inline-flex sm:items-center sm:gap-2">
-          <BarChart3 className="h-4 w-4" />
-          Physique signal center
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="hidden rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary sm:inline-flex sm:items-center sm:gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Physique signal center
+          </div>
+          <Button asChild>
+            <a href={analytics.hasRealWorkoutData ? "#strength-prs" : "/workout"}>
+              {analytics.hasRealWorkoutData ? "Log PR" : "View Today"}
+            </a>
+          </Button>
         </div>
       </PageHeader>
       <ProgressAnalyticsCenter

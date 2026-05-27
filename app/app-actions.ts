@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { APP_NAME } from "@/lib/brand";
 import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
 import { mainPRLifts, type PRHistoryEntry } from "@/lib/progress/pr-history";
 import { calculateRecoveryScore, type RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
@@ -315,7 +316,7 @@ export async function enhanceWorkoutExplanationAction(
           {
             role: "system",
             content:
-              "You are FlexFit AI, a premium physique coach. Polish the explanation only. Do not invent exercises, sets, reps, medical diagnoses, or new safety claims. Keep it under 75 words."
+              `You are ${APP_NAME}, a premium physique coach. Polish the explanation only. Do not invent exercises, sets, reps, medical diagnoses, or new safety claims. Keep it under 75 words.`
           },
           {
             role: "user",

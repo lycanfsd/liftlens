@@ -18,7 +18,7 @@ export default async function AuthErrorPage({
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
       <div className="absolute left-5 top-5">
-        <Logo />
+        <Logo variant="compact" size="sm" />
       </div>
       <div className="absolute inset-0 -z-10 surface-line opacity-25" />
       <Card className="w-full max-w-md border-destructive/30 bg-black/55">

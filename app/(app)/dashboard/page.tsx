@@ -11,12 +11,13 @@ import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import { calculateMomentumSystem, type MomentumLog, type MomentumSystem } from "@/lib/momentum";
 import { normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getEffectivePlanType, hasPremiumAccess } from "@/lib/subscription";
-import type { DashboardStat } from "@/lib/types";
+import type { DailyWorkoutStatus, DashboardStat, GeneratedWorkout } from "@/lib/types";
 
 type DashboardData = {
   userId: string | null;
@@ -31,6 +32,24 @@ type DashboardData = {
   hasPremiumAccess: boolean;
   momentum: MomentumSystem;
   checklistProgress: ChecklistProgress;
+  todayStatus: DailyWorkoutStatus | "none";
+  todayTitle: string;
+  todayFocus: string;
+  goalProfile: string;
+  weakPointFocus: string;
+  weeklyTarget: number;
+  completedThisWeek: number;
+};
+
+type DashboardDailyWorkoutRow = {
+  id: string;
+  workout_date: string;
+  workout_json: unknown;
+  input_snapshot: unknown;
+  title: string | null;
+  status: string | null;
+  updated_at: string | null;
+  created_at: string | null;
 };
 
 function DetailSection({
@@ -67,6 +86,52 @@ function demoMomentumLogs(): MomentumLog[] {
   }));
 }
 
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysAgoKey(daysAgo: number) {
+  return new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 10);
+}
+
+function formatProfileLabel(value: unknown, fallback = "Recomposition") {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function asStringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function isGeneratedWorkout(value: unknown): value is GeneratedWorkout {
+  if (typeof value !== "object" || value === null) return false;
+  const workout = value as Partial<GeneratedWorkout>;
+  return typeof workout.name === "string" && typeof workout.duration === "number" && Array.isArray(workout.exercises);
+}
+
+function validDailyStatus(value: unknown): DailyWorkoutStatus | "none" {
+  return value === "planned" || value === "started" || value === "completed" || value === "skipped" ? value : "none";
+}
+
+function dailyWorkoutToMomentumLog(row: DashboardDailyWorkoutRow): MomentumLog {
+  const workout = isGeneratedWorkout(row.workout_json) ? row.workout_json : null;
+  const input =
+    typeof row.input_snapshot === "object" && row.input_snapshot !== null
+      ? (row.input_snapshot as { energy?: unknown; soreness?: unknown })
+      : {};
+
+  return {
+    completed_at: row.updated_at ?? row.created_at ?? `${row.workout_date}T12:00:00.000Z`,
+    duration: workout?.duration ?? null,
+    focus: row.title ?? workout?.name ?? workout?.focus ?? "Completed workout",
+    energy: typeof input.energy === "number" ? input.energy : null,
+    soreness: typeof input.soreness === "number" ? input.soreness : null
+  };
+}
+
 function dashboardIntensity(data: DashboardData) {
   if (data.momentum.reentryMode) return "Re-entry";
   if (data.momentum.recoveryMode || data.momentum.protectionMode) return "Light";
@@ -81,11 +146,65 @@ function dashboardDuration(data: DashboardData) {
 }
 
 function dashboardWhy(data: DashboardData) {
+  if (data.todayStatus === "completed") return "Workout complete. Recovery starts now.";
+  if (data.todayStatus === "started") return "Finish the session, then lock it in for Progress.";
+  if (data.todayStatus === "planned") return "Your plan is saved. Start with the first exercise.";
   if (data.momentum.reentryMode) return "Re-entry session to keep the system moving.";
   if (data.momentum.recoveryMode) return "Volume reduced to protect recovery.";
   if (data.momentum.protectionMode) return "Friction reduced to preserve momentum.";
   if (data.readinessScore >= 78) return "Readiness supports a useful push.";
   return "Progress maintained with a repeatable dose.";
+}
+
+function dashboardHeadline(data: DashboardData) {
+  if (data.todayStatus === "completed") return "Workout complete. Recovery starts now.";
+  if (data.todayStatus === "started") return "Workout in progress. Finish strong.";
+  if (data.todayStatus === "planned") return "Today's mission is ready.";
+  return data.readinessTitle;
+}
+
+function dashboardPrimaryAction(data: DashboardData) {
+  if (data.todayStatus === "completed") return { href: "/progress", label: "View progress" };
+  if (data.todayStatus === "planned" || data.todayStatus === "started") return { href: "/workout", label: "Go to Today" };
+  return { href: "/workout", label: "Start today's workout" };
+}
+
+function dashboardNextStep(data: DashboardData) {
+  if (data.todayStatus === "completed") return "Log recovery tonight or check your Progress signal.";
+  if (data.todayStatus === "started") return "Complete the final sets and save the workout.";
+  if (data.todayStatus === "planned") return "Open Today and start exercise one.";
+  return "Build today's workout from a quick check-in.";
+}
+
+function dashboardSnapshotStats(data: DashboardData): DashboardStat[] {
+  return [
+    {
+      label: "Weekly goal",
+      value: `${data.completedThisWeek}/${data.weeklyTarget}`,
+      detail:
+        data.completedThisWeek >= data.weeklyTarget
+          ? "Weekly target met"
+          : `${Math.max(0, data.weeklyTarget - data.completedThisWeek)} more to hit the week`
+    },
+    {
+      label: "Today",
+      value:
+        data.todayStatus === "none"
+          ? "Not built"
+          : data.todayStatus.charAt(0).toUpperCase() + data.todayStatus.slice(1),
+      detail: dashboardNextStep(data)
+    },
+    {
+      label: "Momentum",
+      value: `${data.momentum.score}/100`,
+      detail: data.momentum.state
+    },
+    {
+      label: "Recovery",
+      value: `${data.momentum.recoveryBalance}/100`,
+      detail: data.momentum.recoveryMode ? "Keep volume honest" : "Ready to train"
+    }
+  ];
 }
 
 function buildStats(rows: { completed_at: string; energy?: number | null }[], momentum: MomentumSystem): DashboardStat[] {
@@ -117,7 +236,7 @@ function buildStats(rows: { completed_at: string; energy?: number | null }[], mo
     },
     {
       label: "Energy trend",
-      value: rows.length > 0 ? `${avgEnergy.toFixed(1)}/5` : "Pending",
+      value: rows.length > 0 ? `${avgEnergy.toFixed(1)}/5` : "Needs check-ins",
       detail: "Gets smarter with more check-ins"
     }
   ];
@@ -139,7 +258,14 @@ async function getDashboardData(): Promise<DashboardData> {
       planType: "Free",
       hasPremiumAccess: false,
       momentum,
-      checklistProgress: {}
+      checklistProgress: {},
+      todayStatus: "planned",
+      todayTitle: "Adaptive lift",
+      todayFocus: "Upper body",
+      goalProfile: "Recomposition",
+      weakPointFocus: "V-taper",
+      weeklyTarget: 4,
+      completedThisWeek: 3
     };
   }
 
@@ -157,37 +283,78 @@ async function getDashboardData(): Promise<DashboardData> {
       insight: "Log workouts to unlock personalized consistency insights.",
       readinessScore: 58,
       readinessTitle: "Start with a small, clean win",
-      nextBestAction: "Save your first adaptive workout so FlexFit can learn your rhythm.",
+      nextBestAction: `Save your first adaptive workout so ${APP_NAME} can learn your rhythm.`,
       planType: "Free",
       hasPremiumAccess: false,
       momentum: calculateMomentumSystem([], { weeklyTarget: 4, preferredWorkoutLength: 35 }),
-      checklistProgress: {}
+      checklistProgress: {},
+      todayStatus: "none",
+      todayTitle: "Build today's workout",
+      todayFocus: "Adaptive lift",
+      goalProfile: "Recomposition",
+      weakPointFocus: "Set in onboarding",
+      weeklyTarget: 4,
+      completedThisWeek: 0
     };
   }
 
-  const [{ data: logs }, { data: profile }, { data: fitnessProfile }] = await Promise.all([
+  const [{ data: logs }, { data: profile }, { data: fitnessProfile }, { data: completedDailyRows }, { data: todayWorkoutRow }] = await Promise.all([
     supabase
       .from("workout_logs")
       .select("completed_at, duration, focus, energy, soreness")
       .eq("user_id", user.id)
       .order("completed_at", { ascending: false })
       .limit(50),
-    supabase.from("profiles").select("plan_type, weekly_training_days, preferred_workout_length").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("plan_type, weekly_training_days, preferred_workout_length, primary_goal, weak_points")
+      .eq("user_id", user.id)
+      .maybeSingle(),
     supabase
       .from("user_fitness_profiles")
       .select("onboarding_completed, checklist_progress")
       .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("daily_workouts")
+      .select("id, workout_date, workout_json, input_snapshot, title, status, updated_at, created_at")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .gte("workout_date", daysAgoKey(28))
+      .order("workout_date", { ascending: false })
+      .limit(50),
+    supabase
+      .from("daily_workouts")
+      .select("id, workout_date, workout_json, input_snapshot, title, status, updated_at, created_at")
+      .eq("user_id", user.id)
+      .eq("workout_date", todayKey())
       .maybeSingle()
   ]);
 
-  const rows = (logs ?? []) as {
+  const legacyRows = (logs ?? []) as {
     completed_at: string;
     duration: number | null;
     focus: string | null;
     energy: number | null;
     soreness: number | null;
   }[];
-  const profileRow = (profile ?? {}) as { plan_type?: unknown; weekly_training_days?: unknown; preferred_workout_length?: unknown };
+  const completedDaily = ((completedDailyRows ?? []) as DashboardDailyWorkoutRow[]).filter((row) => row.workout_date);
+  const dailyDates = new Set(completedDaily.map((row) => row.workout_date));
+  const dailyRows = completedDaily.map(dailyWorkoutToMomentumLog);
+  const rows = [
+    ...dailyRows,
+    ...legacyRows.filter((row) => {
+      const dateKey = row.completed_at?.slice(0, 10);
+      return !dateKey || !dailyDates.has(dateKey);
+    })
+  ];
+  const profileRow = (profile ?? {}) as {
+    plan_type?: unknown;
+    weekly_training_days?: unknown;
+    preferred_workout_length?: unknown;
+    primary_goal?: unknown;
+    weak_points?: unknown;
+  };
   const fitnessProfileRow = (fitnessProfile ?? {}) as { onboarding_completed?: unknown; checklist_progress?: unknown };
   const checklistProgress = {
     ...((fitnessProfileRow.checklist_progress ?? {}) as ChecklistProgress),
@@ -216,6 +383,10 @@ async function getDashboardData(): Promise<DashboardData> {
     rows.length > 0
       ? rows.reduce((sum, row) => sum + (row.energy ?? 3), 0) / rows.length
       : 0;
+  const todayRow = (todayWorkoutRow ?? null) as DashboardDailyWorkoutRow | null;
+  const todayWorkout = isGeneratedWorkout(todayRow?.workout_json) ? todayRow.workout_json : null;
+  const weakPoints = asStringList(profileRow.weak_points);
+  const todayStatus = validDailyStatus(todayRow?.status);
 
   return {
     userId: user.id,
@@ -240,7 +411,14 @@ async function getDashboardData(): Promise<DashboardData> {
     planType: getEffectivePlanType(planType),
     hasPremiumAccess: premiumAccess,
     momentum,
-    checklistProgress
+    checklistProgress,
+    todayStatus,
+    todayTitle: todayRow?.title ?? todayWorkout?.name ?? "Build today's workout",
+    todayFocus: todayWorkout?.focus ? formatProfileLabel(todayWorkout.focus, "Adaptive lift") : "Adaptive lift",
+    goalProfile: formatProfileLabel(profileRow.primary_goal),
+    weakPointFocus: weakPoints[0] ? formatProfileLabel(weakPoints[0], "Weak point") : "Set in onboarding",
+    weeklyTarget,
+    completedThisWeek: weekRows.length
   };
 }
 
@@ -248,16 +426,18 @@ export default async function DashboardPage() {
   const data = await getDashboardData();
   const icons = [Activity, CalendarCheck2, RotateCcw, ShieldCheck];
   const hasFormCoachAccess = data.hasPremiumAccess;
+  const primaryAction = dashboardPrimaryAction(data);
+  const snapshotStats = dashboardSnapshotStats(data);
 
   return (
     <>
       <PageHeader
-        eyebrow="Daily operating brief"
-        title="Today, keep the system moving."
-        copy="A calm plan for the day you actually have. Details are there when you want them."
+        eyebrow="Dashboard"
+        title="Welcome back"
+        copy={data.todayStatus === "completed" ? "Workout complete. Recovery starts now." : "Your next workout is ready when you are."}
       >
         <Button asChild>
-          <a href="/workout">Start workout</a>
+          <a href={primaryAction.href}>{primaryAction.label}</a>
         </Button>
       </PageHeader>
 
@@ -267,7 +447,7 @@ export default async function DashboardPage() {
           className="overflow-hidden border-white/10 bg-gradient-to-br from-white/[0.075] via-white/[0.04] to-accent/10"
         >
           <CardContent className="p-5 sm:p-6">
-            <div className="grid gap-6 lg:grid-cols-[1fr_280px] lg:items-center">
+            <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-center">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="border-primary/20 bg-primary/10 text-primary">
@@ -276,39 +456,50 @@ export default async function DashboardPage() {
                   </Badge>
                   <Badge>{data.momentum.score}/100 momentum</Badge>
                 </div>
-                <h2 className="mt-4 max-w-2xl text-3xl font-semibold text-white">{data.readinessTitle}</h2>
+                <h2 className="mt-4 max-w-2xl text-3xl font-semibold text-white">{dashboardHeadline(data)}</h2>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{dashboardWhy(data)}</p>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <Button asChild size="lg" className="w-full sm:w-auto">
-                    <a href="/workout">
+                    <a href={primaryAction.href}>
                       <PlayCircle className="h-4 w-4" />
-                      Start workout
+                      {primaryAction.label}
                     </a>
                   </Button>
-                  <span className="text-xs font-medium text-muted-foreground">You do not need a perfect day to make progress.</span>
+                  <span className="text-xs font-medium text-muted-foreground">{data.completedThisWeek} of {data.weeklyTarget} workouts complete this week.</span>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Do today</p>
-                  <p className="mt-2 font-semibold text-white">Adaptive lift</p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Time</p>
-                  <p className="mt-2 font-semibold text-white">{dashboardDuration(data)}</p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Intensity</p>
-                  <p className="mt-2 font-semibold text-white">{dashboardIntensity(data)}</p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Focus</p>
-                  <p className="mt-2 font-semibold text-white">Momentum</p>
+              <div className="rounded-3xl border border-white/10 bg-black/20 p-5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-primary">Today&apos;s mission</p>
+                <h3 className="mt-3 text-xl font-semibold leading-tight text-white">{data.todayTitle}</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{dashboardNextStep(data)}</p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  {[
+                    ["Status", data.todayStatus === "none" ? "Not built" : data.todayStatus.charAt(0).toUpperCase() + data.todayStatus.slice(1)],
+                    ["Built for", data.goalProfile],
+                    ["Focus", data.todayFocus],
+                    ["Dose", `${dashboardIntensity(data)} · ${dashboardDuration(data)}`]
+                  ].map(([label, value]) => (
+                    <div key={label} className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                      <p className="text-[11px] font-semibold uppercase text-muted-foreground">{label}</p>
+                      <p className="mt-1 whitespace-normal break-words text-sm font-semibold leading-5 text-white">{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           </CardContent>
         </Card>
+      </section>
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {snapshotStats.map((stat, index) => (
+          <StatCard
+            key={stat.label}
+            {...stat}
+            icon={icons[index]}
+            accent={index % 2 === 0 ? "green" : "blue"}
+          />
+        ))}
       </section>
 
       <section className="mt-6">
@@ -388,7 +579,7 @@ export default async function DashboardPage() {
                     <EmptyState
                       icon={Activity}
                       title="No muscle group data yet"
-                      copy="Save a completed workout and LiftLens will start building your training profile."
+                      copy={`Save a completed workout and ${APP_NAME} will start building your training profile.`}
                     />
                   </div>
                 )}
@@ -414,7 +605,7 @@ export default async function DashboardPage() {
                 <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                   <p className="text-sm font-semibold text-white">Short session. Still counts.</p>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    On rough days, LiftLens trims volume and keeps the habit alive. That is still training.
+                    On rough days, {APP_NAME} trims volume and keeps the habit alive. That is still training.
                   </p>
                 </div>
               </CardContent>

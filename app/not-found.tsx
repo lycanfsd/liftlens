@@ -4,12 +4,13 @@ import { Compass, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Logo } from "@/components/logo";
+import { APP_NAME } from "@/lib/brand";
 
 export default function NotFound() {
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
       <div className="absolute left-5 top-5">
-        <Logo />
+        <Logo variant="compact" size="sm" />
       </div>
       <Card className="w-full max-w-lg bg-black/55">
         <CardContent className="p-6 text-center">
@@ -23,7 +24,7 @@ export default function NotFound() {
           <Button asChild className="mt-6">
             <Link href="/">
               <Home className="h-4 w-4" />
-              Back to FlexFit
+              Back to {APP_NAME}
             </Link>
           </Button>
         </CardContent>

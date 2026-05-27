@@ -11,7 +11,7 @@ export default function PricingPage() {
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <header className="flex items-center justify-between">
-          <Logo />
+          <Logo variant="compact" size="sm" />
           <Button asChild variant="outline" size="sm">
             <Link href="/">Back home</Link>
           </Button>

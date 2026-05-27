@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, Sparkles } from "lucide-react";
 
 import { markChecklistItemAction } from "@/app/app-actions";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 export type ChecklistProgress = {
@@ -16,7 +17,9 @@ export type ChecklistProgress = {
   visitedProgress?: boolean;
 };
 
-const localChecklistKey = "novyra-new-user-checklist";
+// Keep the old NOVYRA key for compatibility with users who started setup before the Ulvori rebrand.
+const legacyLocalChecklistKey = "novyra-new-user-checklist";
+const localChecklistKey = "ulvori-new-user-checklist";
 
 export const checklistItems: Array<{ key: keyof ChecklistProgress; label: string; href?: string }> = [
   { key: "completedProfile", label: "Complete your profile", href: "/profile" },
@@ -40,7 +43,7 @@ export function getChecklistCompletion(progress: ChecklistProgress) {
 function loadLocalChecklist() {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(localChecklistKey);
+    const raw = window.localStorage.getItem(localChecklistKey) ?? window.localStorage.getItem(legacyLocalChecklistKey);
     return raw ? (JSON.parse(raw) as ChecklistProgress) : {};
   } catch {
     return {};
@@ -138,7 +141,7 @@ export function NewUserChecklist({
             </div>
             <h2 className="mt-2 text-xl font-semibold text-white">{completedCount} of {total} complete</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Finish these steps to personalize NOVYRA and unlock better recommendations.
+              Finish these steps to personalize {APP_NAME} and unlock better recommendations.
             </p>
           </div>
         </div>

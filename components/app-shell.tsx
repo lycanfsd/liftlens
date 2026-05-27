@@ -6,6 +6,7 @@ import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { NavBar } from "@/components/nav-bar";
 import { ProfileMenu } from "@/components/profile-menu";
 import { Badge } from "@/components/ui/badge";
+import { APP_NAME } from "@/lib/brand";
 import type { AppUserIdentity } from "@/lib/types";
 
 export function AppShell({
@@ -22,9 +23,9 @@ export function AppShell({
         <div className="min-w-0 flex-1">
           <header className="sticky top-0 z-30 border-b border-white/10 bg-background/82 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
             <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3">
-              <Logo className="lg:hidden [&>span:last-child>span:last-child]:hidden sm:[&>span:last-child>span:last-child]:block" />
+              <Logo variant="compact" size="sm" className="lg:hidden" />
               <div className="hidden min-w-0 lg:block">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">FlexFit AI</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">{APP_NAME}</p>
                 <p className="mt-1 text-sm text-muted-foreground">Today&apos;s plan fits today&apos;s life.</p>
               </div>
               <div className="flex items-center gap-2">
@@ -42,7 +43,7 @@ export function AppShell({
           </main>
         </div>
       </div>
-      <MobileBottomNav userIdentity={userIdentity} />
+      <MobileBottomNav />
       <Suspense fallback={null}>
         <GuidedWalkthrough userId={userIdentity.userId} />
       </Suspense>

@@ -1,6 +1,7 @@
 import { UserRound } from "lucide-react";
 
 import type { AppUserIdentity } from "@/lib/types";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 const avatarSizes = {
@@ -10,7 +11,7 @@ const avatarSizes = {
 };
 
 export function getIdentityName(identity: AppUserIdentity) {
-  return identity.displayName?.trim() || identity.email.split("@")[0] || "FlexFit member";
+  return identity.displayName?.trim() || identity.email.split("@")[0] || `${APP_NAME} member`;
 }
 
 export function getIdentityInitials(identity: AppUserIdentity) {
@@ -22,7 +23,7 @@ export function getIdentityInitials(identity: AppUserIdentity) {
     .join("")
     .toUpperCase();
 
-  return initials || "FF";
+  return initials || "U";
 }
 
 export function UserAvatar({

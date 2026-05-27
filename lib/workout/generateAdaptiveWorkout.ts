@@ -1,4 +1,5 @@
 import { clamp, createId, toTitleCase } from "@/lib/utils";
+import { APP_NAME } from "@/lib/brand";
 import type { MomentumState } from "@/lib/momentum";
 import type {
   BodyFocus,
@@ -1032,7 +1033,7 @@ function buildExplanation(
           ? "Next time, add load or reps on the first two lifts if all sets land at target RIR."
           : "Next time, progress by adding reps first, then load after the top of the range is clean.",
     safety: [
-      "FlexFit is educational and not a medical diagnosis.",
+      `${APP_NAME} is educational and not a medical diagnosis.`,
       "Stop if you feel sharp pain, chest pain, severe dizziness, unusual shortness of breath, or injury symptoms.",
       "For injuries or persistent pain, consult a qualified clinician or coach."
     ]

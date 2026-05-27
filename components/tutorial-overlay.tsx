@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, X } from "lucide-react";
 
 import { completeTutorialAction } from "@/app/app-actions";
 import { Button } from "@/components/ui/button";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 const tutorialSteps = [
@@ -64,7 +65,7 @@ export function TutorialOverlay({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="NOVYRA tutorial"
+        aria-label={`${APP_NAME} tutorial`}
         className="relative w-full max-w-lg rounded-3xl border border-primary/25 bg-[radial-gradient(circle_at_top_right,rgba(74,222,128,0.11),transparent_36%),rgba(0,0,0,0.92)] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
       >
         <button
@@ -77,7 +78,7 @@ export function TutorialOverlay({
         </button>
 
         <div className="pr-10">
-          <p className="text-sm font-semibold text-primary">NOVYRA tutorial</p>
+          <p className="text-sm font-semibold text-primary">{APP_NAME} tutorial</p>
           <h2 className="mt-3 text-2xl font-semibold text-white">{current.title}</h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">{current.copy}</p>
         </div>

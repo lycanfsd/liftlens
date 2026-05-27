@@ -492,9 +492,9 @@ export function buildProgressAnalytics({
       completionSubtext: `${consistency.completedThisWeek} of ${consistency.weeklyTarget} workouts completed this week`,
       currentStreak: `${consistency.currentStreak} ${consistency.currentStreak === 1 ? "day" : "days"}`,
       streakSubtext: consistency.currentStreak > 0 ? "Keep stacking wins" : "Start the next run today",
-      weeklyVolume: weeklyVolume > 0 ? `${formatLargeNumber(weeklyVolume)} lb` : "Pending",
-      weeklyVolumeSubtext: hasRealLoadData ? "Total lifted this week" : "Complete workouts to build the signal",
-      strengthProgress: hasRealLoadData ? `${avgStrengthChange >= 0 ? "+" : ""}${avgStrengthChange.toFixed(1)}%` : "Pending",
+      weeklyVolume: weeklyVolume > 0 ? `${formatLargeNumber(weeklyVolume)} lb` : "Add load",
+      weeklyVolumeSubtext: hasRealLoadData ? "Total lifted this week" : "Track weights to unlock volume",
+      strengthProgress: hasRealLoadData ? `${avgStrengthChange >= 0 ? "+" : ""}${avgStrengthChange.toFixed(1)}%` : "Add PR",
       strengthSubtext: hasRealLoadData ? "Compared with last month" : "Add PRs to start the trend",
       recoveryScore: `${recoveryScore}/100`,
       recoverySubtext: recoveryText

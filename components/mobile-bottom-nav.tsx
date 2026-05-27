@@ -2,31 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Dumbbell, History, Home, Lock, MessageCircle, Target, UserRound, Video } from "lucide-react";
+import { BarChart3, Dumbbell, Home, MessageCircle, UserRound } from "lucide-react";
 
-import type { AppUserIdentity } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const mobileItems = [
   { href: "/dashboard", label: "Home", icon: Home, tourId: "sidebar-dashboard" },
   { href: "/workout", label: "Today", icon: Dumbbell, tourId: "today-nav" },
   { href: "/progress", label: "Progress", icon: BarChart3, tourId: "progress-nav" },
-  { href: "/form-coach", label: "Form", icon: Video, proOnly: true },
-  { href: "/weak-points", label: "Focus", icon: Target },
-  { href: "/history", label: "History", icon: History },
   { href: "/coach", label: "Coach", icon: MessageCircle },
   { href: "/profile", label: "Profile", icon: UserRound }
 ];
 
-export function MobileBottomNav({ userIdentity }: { userIdentity: AppUserIdentity }) {
+export function MobileBottomNav() {
   const pathname = usePathname();
-  const hasFormCoachAccess = userIdentity.hasPremiumAccess;
 
   return (
-    <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-8 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur lg:hidden">
+    <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur lg:hidden">
       {mobileItems.map((item) => {
         const active = pathname === item.href;
-        const locked = item.proOnly && !hasFormCoachAccess;
         return (
           <Link
             key={item.href}
@@ -39,11 +33,6 @@ export function MobileBottomNav({ userIdentity }: { userIdentity: AppUserIdentit
           >
             <span className="relative">
               <item.icon className={cn("h-4 w-4", active && "text-primary")} />
-              {locked ? (
-                <span className="absolute -right-2 -top-2 grid h-3.5 w-3.5 place-items-center rounded-full bg-primary text-primary-foreground">
-                  <Lock className="h-2.5 w-2.5" />
-                </span>
-              ) : null}
             </span>
             {item.label}
           </Link>

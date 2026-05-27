@@ -23,6 +23,7 @@ import { SafetyDisclaimer } from "@/components/safety-disclaimer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { APP_NAME } from "@/lib/brand";
 
 const features = [
   {
@@ -32,7 +33,7 @@ const features = [
   },
   {
     title: "Gym Crowding Substitutions",
-    copy: "Packed gym? FlexFit swaps stations so momentum does not die in a line.",
+    copy: "Packed gym? Ulvori swaps stations so momentum does not die in a line.",
     icon: Dumbbell
   },
   {
@@ -59,7 +60,7 @@ const features = [
 
 const faqs = [
   {
-    q: "Is FlexFit AI only for gym workouts?",
+    q: "Is Ulvori only for gym workouts?",
     a: "No. It adapts to full gyms, home gyms, dumbbells, and bodyweight days."
   },
   {
@@ -81,7 +82,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
     <div className="min-h-screen bg-background text-foreground">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-black/45 backdrop-blur">
         <div className="container flex h-16 items-center justify-between gap-3">
-          <Logo className="[&>span:last-child>span:last-child]:hidden sm:[&>span:last-child>span:last-child]:block" />
+          <Logo variant="compact" size="sm" />
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <a href="#features" className="transition hover:text-white">
               Features
@@ -120,7 +121,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
       <main>
         <section className="relative flex min-h-[88svh] items-end overflow-hidden pb-12 pt-28 sm:pb-16">
           <Image
-            src="/images/flexfit-hero.png"
+            src="/images/ulvori-hero.png"
             alt="Focused athlete preparing for an adaptive workout in a premium dark fitness space"
             fill
             priority
@@ -144,7 +145,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
                 Your workout plan should adapt to your life.
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-zinc-200 sm:text-lg">
-                FlexFit AI modifies workouts based on your time, energy, soreness, equipment,
+                {APP_NAME} modifies workouts based on your time, energy, soreness, equipment,
                 gym crowding, and schedule so consistency feels possible on ordinary days.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -193,7 +194,7 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
             <div>
               <p className="text-sm font-semibold text-primary">The premium moment</p>
               <h2 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">
-                FlexFit does not ask you to obey a static plan.
+                {APP_NAME} does not ask you to obey a static plan.
               </h2>
               <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">
                 The product earns trust when life changes. It turns constraints into a usable training dose,
@@ -302,8 +303,8 @@ export function LandingPage({ isAuthenticated = false }: { isAuthenticated?: boo
 
       <footer className="border-t border-white/10 py-8">
         <div className="container flex flex-col gap-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <Logo />
-          <p>Copyright 2026 FlexFit AI. Built for ordinary days that still count.</p>
+          <Logo variant="horizontal" size="sm" />
+          <p>Copyright 2026 {APP_NAME}. Built for ordinary days that still count.</p>
         </div>
       </footer>
     </div>

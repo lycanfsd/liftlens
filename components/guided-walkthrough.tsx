@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 
 import { completeTutorialAction } from "@/app/app-actions";
 import { Button } from "@/components/ui/button";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 type WalkthroughPlacement = "top" | "right" | "bottom" | "left" | "center";
@@ -42,7 +43,7 @@ const walkthroughSteps: WalkthroughStep[] = [
     route: "/workout",
     target: "[data-tour='today-page'], [data-tour='today-nav']",
     title: "Today is your training hub",
-    body: "Today is where NOVYRA builds your workout around your time, energy, soreness, and equipment.",
+    body: `${APP_NAME} builds your workout around your time, energy, soreness, and equipment.`,
     placement: "bottom"
   },
   {
@@ -50,7 +51,7 @@ const walkthroughSteps: WalkthroughStep[] = [
     route: "/workout",
     target: "[data-tour='daily-checkin']",
     title: "Check in before training",
-    body: "Tell NOVYRA what today looks like. Your workout adapts to real life, not a perfect schedule.",
+    body: `Tell ${APP_NAME} what today looks like. Your workout adapts to real life, not a perfect schedule.`,
     placement: "top"
   },
   {
@@ -104,6 +105,11 @@ const walkthroughSteps: WalkthroughStep[] = [
 ];
 
 function localTourKey(userId?: string | null) {
+  return `ulvori-app-tour-${userId ?? "local"}`;
+}
+
+function legacyLocalTourKey(userId?: string | null) {
+  // Keep the old NOVYRA key for compatibility with users who completed the tour before the Ulvori rebrand.
   return `novyra-app-tour-${userId ?? "local"}`;
 }
 
@@ -199,6 +205,7 @@ export function GuidedWalkthrough({ userId }: { userId?: string | null }) {
     setStepIndex(0);
     setOpen(true);
     window.localStorage.removeItem(localTourKey(userId));
+    window.localStorage.removeItem(legacyLocalTourKey(userId));
     router.replace(pathname);
   }, [pathname, router, searchParams, userId]);
 
@@ -319,7 +326,7 @@ export function GuidedWalkthrough({ userId }: { userId?: string | null }) {
         <motion.div
           role="dialog"
           aria-modal="true"
-          aria-label="NOVYRA app tour"
+          aria-label={`${APP_NAME} app tour`}
           className={cn(
             "rounded-3xl border border-primary/25 bg-[radial-gradient(circle_at_top_right,rgba(74,222,128,0.12),transparent_38%),rgba(9,9,11,0.94)] p-5 shadow-[0_24px_90px_rgba(0,0,0,0.62)] backdrop-blur-xl",
             isSheet

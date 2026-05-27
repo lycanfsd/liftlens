@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { APP_NAME } from "@/lib/brand";
 import { normalizePlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -18,7 +19,7 @@ export default async function ProtectedAppLayout({
 }>) {
   let userIdentity: AppUserIdentity = {
     userId: null,
-    email: "demo@flexfit.ai",
+    email: "demo@ulvori.app",
     displayName: "Demo Athlete",
     avatarUrl: null,
     planType: "Free",
@@ -47,7 +48,7 @@ export default async function ProtectedAppLayout({
 
     userIdentity = {
       userId: user.id,
-      email: getText(profileRow.email) ?? user.email ?? "FlexFit member",
+      email: getText(profileRow.email) ?? user.email ?? `${APP_NAME} member`,
       displayName: getText(profileRow.display_name),
       avatarUrl: getText(profileRow.avatar_url),
       planType: getEffectivePlanType(planType),

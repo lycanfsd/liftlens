@@ -16,6 +16,7 @@ import {
   struggles,
   weakPoints
 } from "@/lib/constants";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 export type ProfileFormValues = {
@@ -132,7 +133,7 @@ export function ProfileForm({ initialValues }: { initialValues: ProfileFormValue
               <p className="font-semibold text-white">Your profile is ready for a little more context.</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Add {missingFields.slice(0, 3).join(", ")}
-                {missingFields.length > 3 ? ", and a few more details" : ""} so FlexFit can adapt with less guesswork.
+                {missingFields.length > 3 ? ", and a few more details" : ""} so {APP_NAME} can adapt with less guesswork.
               </p>
             </div>
           </CardContent>
@@ -156,7 +157,7 @@ export function ProfileForm({ initialValues }: { initialValues: ProfileFormValue
             <p className="text-sm font-semibold text-primary">Personal info</p>
             <h2 className="mt-2 text-2xl font-semibold text-white">The basics that tune the plan.</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Keep this lightweight. FlexFit uses it to make better defaults, not to judge the day.
+              Keep this lightweight. {APP_NAME} uses it to make better defaults, not to judge the day.
             </p>
           </div>
 
@@ -198,7 +199,7 @@ export function ProfileForm({ initialValues }: { initialValues: ProfileFormValue
             <p className="text-sm font-semibold text-accent">Fitness preferences</p>
             <h2 className="mt-2 text-2xl font-semibold text-white">How training fits real life.</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              These are the constraints FlexFit should respect before it suggests volume or equipment.
+              These are the constraints {APP_NAME} should respect before it suggests volume or equipment.
             </p>
           </div>
 

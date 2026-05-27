@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { APP_NAME } from "@/lib/brand";
 import { normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -314,8 +315,7 @@ async function generateOpenAiCoachMessage(context: WorkoutContext) {
       input: [
         {
           role: "system",
-          content:
-            "You are FlexFit AI, a supportive premium fitness coach for busy people. Write one concise daily dashboard message. Do not give medical advice or diagnose injuries. Keep it confident, specific, and under 90 words."
+          content: `You are ${APP_NAME}, a supportive premium fitness coach for busy people. Write one concise daily dashboard message. Do not give medical advice or diagnose injuries. Keep it confident, specific, and under 90 words.`
         },
         {
           role: "user",

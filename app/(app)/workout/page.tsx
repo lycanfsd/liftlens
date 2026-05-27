@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/page-header";
 import { SafetyDisclaimer } from "@/components/safety-disclaimer";
 import { WorkoutGenerator } from "@/components/workout-generator";
+import { APP_NAME } from "@/lib/brand";
 import { calculateMomentumSystem } from "@/lib/momentum";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -136,6 +137,22 @@ async function getWorkoutEngineContext(): Promise<Partial<WorkoutEngineContext> 
   };
 }
 
+function formatContextLabel(value: unknown, fallback = "Recomposition") {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function workoutPageCopy(engineContext: Partial<WorkoutEngineContext> | undefined) {
+  const goal = formatContextLabel(engineContext?.goal);
+  const weakPoint = engineContext?.weakPoints?.[0] ? formatContextLabel(engineContext.weakPoints[0], "") : null;
+  const context = weakPoint ? `${goal} + ${weakPoint}` : goal;
+
+  return `Built for: ${context}. Check in once and ${APP_NAME} will adapt the plan around your energy, time, recovery, and gym setup.`;
+}
+
 export default async function WorkoutPage() {
   const [engineContext, todayWorkoutResult] = await Promise.all([
     getWorkoutEngineContext(),
@@ -145,9 +162,9 @@ export default async function WorkoutPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Daily adaptive workout"
-        title="Build today's workout"
-        copy="Tell NOVYRA what today looks like. We'll adapt the plan around your energy, time, recovery, and gym setup."
+        eyebrow="Daily training hub"
+        title="Today"
+        copy={workoutPageCopy(engineContext)}
       />
       <WorkoutGenerator
         engineContext={engineContext}
