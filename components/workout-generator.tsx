@@ -21,7 +21,6 @@ import {
   markChecklistItemAction,
   updateDailyWorkoutStatusAction
 } from "@/app/app-actions";
-import { NewUserChecklist, type ChecklistProgress } from "@/components/new-user-checklist";
 import { CompletedTodayBanner, CompletionSuccessModal } from "@/components/workout-completion-celebration";
 import { WorkoutCard, type WorkoutViewMode } from "@/components/workout-card";
 import { Button } from "@/components/ui/button";
@@ -313,17 +312,11 @@ function StepLabel({ step, title, copy }: { step: number; title: string; copy?: 
 export function WorkoutGenerator({
   engineContext,
   initialDailyWorkout,
-  currentUserId,
-  onboardingCompleted = false,
-  onboardingMissingWithData = false,
-  checklistProgress = {}
+  currentUserId
 }: {
   engineContext?: Partial<WorkoutEngineContext>;
   initialDailyWorkout?: DailyWorkoutRecord | null;
   currentUserId?: string | null;
-  onboardingCompleted?: boolean;
-  onboardingMissingWithData?: boolean;
-  checklistProgress?: ChecklistProgress;
 }) {
   const initialInput = initialDailyWorkout?.inputSnapshot ?? defaultInput;
   const {
@@ -346,7 +339,6 @@ export function WorkoutGenerator({
   const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkout);
   const [showRegenerateOptions, setShowRegenerateOptions] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [openedInstruction, setOpenedInstruction] = useState(Boolean(checklistProgress.openedInstruction));
   const [isPending, startTransition] = useTransition();
 
   const fitScore = useMemo(() => {
@@ -384,7 +376,6 @@ export function WorkoutGenerator({
   }
 
   function noteInstructionOpened() {
-    setOpenedInstruction(true);
     startTransition(async () => {
       await markChecklistItemAction("openedInstruction");
     });
@@ -499,12 +490,19 @@ export function WorkoutGenerator({
         }
 
         const statusResult = await updateDailyWorkoutStatusAction("completed", dailyWorkout?.id);
+        const completedRecord = statusResult.dailyWorkout?.status === "completed" ? statusResult.dailyWorkout : null;
+
+        if (completedRecord) {
+          setDailyWorkout(completedRecord, "backend");
+          setMessage(statusResult.message);
+          setShowCompletionModal(true);
+          return;
+        }
+
         if (!statusResult.ok) {
-          if (statusResult.dailyWorkout) setDailyWorkout(statusResult.dailyWorkout, "backend");
           setMessage(statusResult.message);
           return;
         }
-        if (statusResult.dailyWorkout) setDailyWorkout(statusResult.dailyWorkout, "backend");
 
         setMessage(statusResult.message);
         setShowCompletionModal(true);
@@ -535,43 +533,11 @@ export function WorkoutGenerator({
         : workout.focus.toLowerCase().includes("upper")
           ? "Tomorrow: bias lower body or conditioning so today's work can recover."
           : "Tomorrow: train the next major pattern, then add one weak-point accessory if recovery feels good.";
-  const checklistInitialProgress = useMemo(
-    () => ({
-      ...checklistProgress,
-      completedProfile: checklistProgress.completedProfile || onboardingCompleted,
-      openedInstruction
-    }),
-    [checklistProgress, onboardingCompleted, openedInstruction]
-  );
-
   return (
     <div data-tour="today-page" className="mx-auto max-w-6xl space-y-6">
       <CompletionSuccessModal open={showCompletionModal} onClose={closeCompletionModal} />
 
       <CompletedTodayBanner show={showCompletedBanner} />
-
-      {!onboardingCompleted && onboardingMissingWithData ? (
-        <Card className="border-primary/20 bg-primary/10">
-          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-primary">Personalize NOVYRA</p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                You already have training data. Add your goal, equipment, and weak points when you want sharper recommendations.
-              </p>
-            </div>
-            <Button asChild className="w-full sm:w-auto">
-              <a href="/onboarding">Personalize</a>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <NewUserChecklist
-        initialProgress={checklistInitialProgress}
-        generatedWorkout={hasGenerated}
-        completedWorkout={isTodayWorkoutCompleted}
-        userId={currentUserId}
-      />
 
       {isTodayWorkoutCompleted ? (
         <Card className="border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.13),transparent_38%),rgba(255,255,255,0.035)]">

@@ -13,6 +13,7 @@ import {
 import type { RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { ExercisePrescription, GeneratedWorkout } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,17 @@ type WorkoutLogRow = {
   focus: string | null;
   energy: number | null;
   soreness: number | null;
+};
+
+type DailyWorkoutProgressRow = {
+  id: string;
+  workout_date: string;
+  workout_json: unknown;
+  input_snapshot: unknown;
+  title: string | null;
+  status: string | null;
+  updated_at: string | null;
+  created_at: string | null;
 };
 
 type WorkoutExerciseRow = {
@@ -81,6 +93,55 @@ function parseReps(value: string | null) {
   return firstNumber ? Number(firstNumber) : 8;
 }
 
+function debugProgress(event: string, details?: Record<string, unknown>) {
+  if (process.env.DEBUG_PROGRESS_ANALYTICS === "true") {
+    console.debug(`[progress-analytics] ${event}`, details ?? {});
+  }
+}
+
+function isGeneratedWorkout(value: unknown): value is GeneratedWorkout {
+  if (typeof value !== "object" || value === null) return false;
+  const workout = value as Partial<GeneratedWorkout>;
+
+  return typeof workout.name === "string" && typeof workout.duration === "number" && Array.isArray(workout.exercises);
+}
+
+function completedAtForDailyWorkout(row: DailyWorkoutProgressRow) {
+  return row.updated_at ?? row.created_at ?? `${row.workout_date}T12:00:00.000Z`;
+}
+
+function dailyWorkoutToLog(row: DailyWorkoutProgressRow, workout: GeneratedWorkout): ProgressWorkoutLog {
+  const input = typeof row.input_snapshot === "object" && row.input_snapshot !== null
+    ? (row.input_snapshot as { energy?: unknown; soreness?: unknown })
+    : {};
+
+  return {
+    id: row.id,
+    workoutId: row.id,
+    workoutDate: row.workout_date,
+    title: row.title ?? workout.name,
+    completedAt: completedAtForDailyWorkout(row),
+    duration: workout.duration,
+    focus: workout.focus ?? "Full body",
+    energy: typeof input.energy === "number" ? input.energy : null,
+    soreness: typeof input.soreness === "number" ? input.soreness : null,
+    completedExercises: workout.exercises.length
+  };
+}
+
+function dailyWorkoutToExercises(row: DailyWorkoutProgressRow, workout: GeneratedWorkout): ExercisePerformanceEntry[] {
+  return workout.exercises.map((exercise: ExercisePrescription, index) => ({
+    id: `${row.id}-${index}`,
+    workoutId: row.id,
+    date: completedAtForDailyWorkout(row),
+    exerciseName: exercise.name,
+    muscleGroup: exercise.muscleGroup,
+    sets: exercise.sets,
+    reps: parseReps(exercise.reps),
+    weight: null
+  }));
+}
+
 async function getProgressAnalytics() {
   if (!isSupabaseConfigured) {
     return { analytics: buildProgressAnalytics(demoProgressInputs()), userId: null, ...emptyAccountMetrics };
@@ -97,12 +158,20 @@ async function getProgressAnalytics() {
 
   const [
     { data: profile },
+    { data: dailyRows, error: dailyError },
     { data: logs, error: logsError },
     { data: prRows },
     { data: physiqueRows },
     { data: recoveryRows }
   ] = await Promise.all([
     supabase.from("profiles").select("weekly_training_days, primary_goal, weak_points").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("daily_workouts")
+      .select("id, workout_date, workout_json, input_snapshot, title, status, updated_at, created_at")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .order("workout_date", { ascending: false })
+      .limit(180),
     supabase
       .from("workout_logs")
       .select("workout_id, completed_at, duration, focus, energy, soreness")
@@ -128,34 +197,54 @@ async function getProgressAnalytics() {
       .limit(100)
   ]);
 
-  if (logsError) {
+  if (dailyError && logsError) {
+    debugProgress("history fetch failed", {
+      user_id: user.id,
+      daily_workouts: dailyError.message,
+      workout_logs: logsError.message
+    });
     return { analytics: buildProgressAnalytics({ logs: [], exercises: [], weeklyTarget: 5 }), userId: user.id, ...emptyAccountMetrics };
   }
 
-  const logRows = ((logs ?? []) as WorkoutLogRow[]).filter((row) => row.completed_at);
-  const workoutLogs: ProgressWorkoutLog[] = logRows.map((row, index) => ({
+  const completedDailyRows = ((dailyRows ?? []) as DailyWorkoutProgressRow[])
+    .filter((row) => row.status === "completed" && row.workout_date)
+    .map((row) => ({ row, workout: isGeneratedWorkout(row.workout_json) ? row.workout_json : null }))
+    .filter((item): item is { row: DailyWorkoutProgressRow; workout: GeneratedWorkout } => Boolean(item.workout));
+  const dailyWorkoutDates = new Set(completedDailyRows.map((item) => item.row.workout_date));
+  const dailyLogs = completedDailyRows.map((item) => dailyWorkoutToLog(item.row, item.workout));
+  const dailyExercises = completedDailyRows.flatMap((item) => dailyWorkoutToExercises(item.row, item.workout));
+  const legacyLogRows = ((logs ?? []) as WorkoutLogRow[]).filter((row) => {
+    if (!row.completed_at) return false;
+    const dateKey = row.completed_at.slice(0, 10);
+    return !dailyWorkoutDates.has(dateKey);
+  });
+  const legacyWorkoutLogs: ProgressWorkoutLog[] = legacyLogRows.map((row, index) => ({
     id: row.workout_id ?? `log-${index}`,
     workoutId: row.workout_id,
+    workoutDate: row.completed_at.slice(0, 10),
+    title: row.focus ?? "Completed workout",
     completedAt: row.completed_at,
     duration: row.duration ?? 35,
     focus: row.focus ?? "Full body",
     energy: row.energy,
     soreness: row.soreness
   }));
-  const workoutIds = Array.from(new Set(logRows.map((row) => row.workout_id).filter(Boolean))) as string[];
-  let exercises: ExercisePerformanceEntry[] = [];
+  const workoutLogs = [...dailyLogs, ...legacyWorkoutLogs];
+  const workoutIds = Array.from(new Set(legacyLogRows.map((row) => row.workout_id).filter(Boolean))) as string[];
+  let legacyExercises: ExercisePerformanceEntry[] = [];
 
   if (workoutIds.length) {
     const { data: exerciseRows } = await supabase
       .from("workout_exercises")
       .select("workout_id, name, muscle_group, sets, reps")
       .in("workout_id", workoutIds);
-    const dateByWorkoutId = new Map(logRows.map((row) => [row.workout_id, row.completed_at]));
+    const dateByWorkoutId = new Map(legacyLogRows.map((row) => [row.workout_id, row.completed_at]));
 
-    exercises = ((exerciseRows ?? []) as WorkoutExerciseRow[])
+    legacyExercises = ((exerciseRows ?? []) as WorkoutExerciseRow[])
       .filter((row) => row.workout_id && row.name)
       .map((row, index) => ({
         id: `${row.workout_id}-${index}`,
+        workoutId: row.workout_id,
         date: dateByWorkoutId.get(row.workout_id) ?? new Date().toISOString(),
         exerciseName: row.name ?? "Exercise",
         muscleGroup: row.muscle_group,
@@ -164,9 +253,19 @@ async function getProgressAnalytics() {
         weight: null
       }));
   }
+  const exercises = [...dailyExercises, ...legacyExercises];
 
   const profileRow = (profile ?? {}) as { weekly_training_days?: unknown; primary_goal?: unknown; weak_points?: unknown };
   const weeklyTarget = typeof profileRow.weekly_training_days === "number" ? profileRow.weekly_training_days : 5;
+
+  debugProgress("history fetch success", {
+    user_id: user.id,
+    completed_daily_workouts: dailyLogs.length,
+    legacy_workout_logs: legacyWorkoutLogs.length,
+    completed_workouts: workoutLogs.length,
+    exercise_entries: exercises.length
+  });
+
   const prEntries: PRHistoryEntry[] = ((prRows ?? []) as PRHistoryRow[]).map((row) => ({
     id: row.id,
     lift: row.lift,

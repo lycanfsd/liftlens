@@ -84,7 +84,7 @@ export function CompletionSuccessModal({
               Workout complete
             </h2>
             <p className="mx-auto mt-3 max-w-xs text-sm leading-6 text-muted-foreground">
-              Good work — today’s workout is done. Keep stacking wins.
+              Good work &mdash; today&rsquo;s workout is done. Keep stacking wins.
             </p>
 
             <Button type="button" size="lg" className="mt-6 w-full" onClick={onClose}>

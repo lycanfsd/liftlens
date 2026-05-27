@@ -128,6 +128,15 @@ function formatChange(change: number | null, unit: string) {
   return `${change > 0 ? "+" : ""}${change.toFixed(1)} ${unit}`;
 }
 
+function formatCompletedTime(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
 function formatProfileLabel(value: string | null | undefined) {
   if (!value) return "Recomposition";
   return value
@@ -293,6 +302,7 @@ function OverviewCards({ analytics, recoveryScore }: { analytics: ProgressAnalyt
 
 function ConsistencyAnalytics({ analytics }: { analytics: ProgressAnalytics }) {
   const consistency = analytics.consistency;
+  const recent = analytics.recentWorkouts;
 
   return (
     <ProgressSection title="Consistency" copy="Consistency matters more than perfection. This view keeps the week honest without guilt.">
@@ -362,6 +372,46 @@ function ConsistencyAnalytics({ analytics }: { analytics: ProgressAnalytics }) {
           </CardContent>
         </Card>
       </div>
+      <Card className={polishedCardHover}>
+        <CardContent className="p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-white">Recent completed workouts</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Pulled from the same completed Today workouts that power your history.</p>
+            </div>
+            <SourceBadge real={analytics.hasRealWorkoutData} />
+          </div>
+
+          {recent.length ? (
+            <div className="mt-4 grid gap-2">
+              {recent.map((workout) => (
+                <div
+                  key={workout.id}
+                  className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm transition hover:border-primary/20 hover:bg-white/[0.05] sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-white">{workout.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Completed {formatCompletedTime(workout.completedAt)}</p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    {workout.totalSets} sets
+                  </span>
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                    {workout.totalVolume > 0 ? `${workout.totalVolume.toLocaleString()} lb` : "Volume pending"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-white/15 bg-white/[0.025] p-5">
+              <p className="font-semibold text-white">Complete your first workout to unlock progress analytics.</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Once you finish a Today workout, it will appear here with sets, focus, and muscle group volume.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </ProgressSection>
   );
 }
@@ -1445,12 +1495,18 @@ export function ProgressAnalyticsCenter({
         <Card className="border-white/10 bg-white/[0.035]">
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-white">Some signals are in preview mode.</p>
+              <p className="text-sm font-semibold text-white">
+                {analytics.hasRealWorkoutData ? "Load tracking is still pending." : "Complete your first workout to unlock analytics."}
+              </p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Complete workouts to replace consistency demos. Set-weight tracking will replace demo strength and volume estimates later.
+                {analytics.hasRealWorkoutData
+                  ? "Consistency and muscle balance now use real completed workouts. Add set weights or PRs to unlock strength and volume trends."
+                  : "Progress will stay honest until you have completed workout history. No fake completion data is shown."}
               </p>
             </div>
-            <Badge className="w-fit border-primary/20 bg-primary/10 text-primary">Future-ready data layer</Badge>
+            <Badge className="w-fit border-primary/20 bg-primary/10 text-primary">
+              {analytics.hasRealWorkoutData ? "Real workout data" : "Waiting for first session"}
+            </Badge>
           </CardContent>
         </Card>
       ) : null}

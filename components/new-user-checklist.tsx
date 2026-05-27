@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { CheckCircle2, Circle, Sparkles } from "lucide-react";
 
 import { markChecklistItemAction } from "@/app/app-actions";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +18,7 @@ export type ChecklistProgress = {
 
 const localChecklistKey = "novyra-new-user-checklist";
 
-const checklistItems: Array<{ key: keyof ChecklistProgress; label: string; href?: string }> = [
+export const checklistItems: Array<{ key: keyof ChecklistProgress; label: string; href?: string }> = [
   { key: "completedProfile", label: "Complete your profile", href: "/profile" },
   { key: "generatedFirstWorkout", label: "Generate your first workout", href: "/workout" },
   { key: "openedInstruction", label: "Open an exercise instruction" },
@@ -27,6 +26,16 @@ const checklistItems: Array<{ key: keyof ChecklistProgress; label: string; href?
   { key: "loggedFirstPr", label: "Log your first PR", href: "/progress" },
   { key: "visitedProgress", label: "Visit Progress Analytics", href: "/progress" }
 ];
+
+export function getChecklistCompletion(progress: ChecklistProgress) {
+  const completedCount = checklistItems.filter((item) => progress[item.key]).length;
+
+  return {
+    completedCount,
+    total: checklistItems.length,
+    complete: completedCount === checklistItems.length
+  };
+}
 
 function loadLocalChecklist() {
   if (typeof window === "undefined") return {};
@@ -45,17 +54,16 @@ function saveLocalChecklist(progress: ChecklistProgress) {
 
 export function NewUserChecklist({
   initialProgress = {},
-  generatedWorkout,
-  completedWorkout,
+  generatedWorkout = false,
+  completedWorkout = false,
   userId
 }: {
   initialProgress?: ChecklistProgress;
-  generatedWorkout: boolean;
-  completedWorkout: boolean;
+  generatedWorkout?: boolean;
+  completedWorkout?: boolean;
   userId?: string | null;
 }) {
   const [progress, setProgress] = useState<ChecklistProgress>(initialProgress);
-  const [collapsed, setCollapsed] = useState(false);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -84,13 +92,7 @@ export function NewUserChecklist({
     });
   }, [completedWorkout, generatedWorkout, userId]);
 
-  const completedCount = useMemo(
-    () => checklistItems.filter((item) => progress[item.key]).length,
-    [progress]
-  );
-  const complete = completedCount === checklistItems.length;
-
-  if (complete && collapsed) return null;
+  const { completedCount, total, complete } = useMemo(() => getChecklistCompletion(progress), [progress]);
 
   function mark(key: keyof ChecklistProgress) {
     setProgress((current) => {
@@ -107,32 +109,42 @@ export function NewUserChecklist({
   }
 
   return (
-    <Card className={cn("border-primary/20 bg-primary/[0.08]", complete && "bg-primary/10")}>
-      <CardContent className="p-5">
+    <Card className={cn("border-primary/20 bg-primary/[0.08]", complete && "bg-white/[0.035]")}>
+      <CardContent className={cn("p-5", complete && "p-4")}>
+        {complete ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+                <CheckCircle2 className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-white">Setup complete</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  You&apos;re ready to train. Start each day from Today and track progress over time.
+                </p>
+              </div>
+            </div>
+            <span className="w-fit rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              {total} of {total} complete
+            </span>
+          </div>
+        ) : (
+          <>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-primary">
               <Sparkles className="h-4 w-4" />
               <p className="text-sm font-semibold">Get started</p>
             </div>
-            <h2 className="mt-2 text-xl font-semibold text-white">
-              {complete ? "Setup complete" : `${completedCount} of ${checklistItems.length} complete`}
-            </h2>
+            <h2 className="mt-2 text-xl font-semibold text-white">{completedCount} of {total} complete</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {complete
-                ? "Your daily loop is live. Come back tomorrow and keep the signal moving."
-                : "A few small actions unlock better workouts and clearer progress."}
+              Finish these steps to personalize NOVYRA and unlock better recommendations.
             </p>
           </div>
-          {complete ? (
-            <Button type="button" variant="ghost" onClick={() => setCollapsed(true)}>
-              Hide
-            </Button>
-          ) : null}
         </div>
 
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(completedCount / checklistItems.length) * 100}%` }} />
+          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(completedCount / total) * 100}%` }} />
         </div>
 
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -177,6 +189,8 @@ export function NewUserChecklist({
             );
           })}
         </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

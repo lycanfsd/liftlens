@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { DailyCoachMessage } from "@/components/daily-coach-message";
 import { EmptyState } from "@/components/empty-state";
 import { MomentumCard, WeeklyRecapCard } from "@/components/momentum-system";
+import { NewUserChecklist, type ChecklistProgress } from "@/components/new-user-checklist";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ import { getEffectivePlanType, hasPremiumAccess } from "@/lib/subscription";
 import type { DashboardStat } from "@/lib/types";
 
 type DashboardData = {
+  userId: string | null;
   stats: DashboardStat[];
   consistency: number;
   mostTrained: string[];
@@ -28,6 +30,7 @@ type DashboardData = {
   planType: PlanType;
   hasPremiumAccess: boolean;
   momentum: MomentumSystem;
+  checklistProgress: ChecklistProgress;
 };
 
 function DetailSection({
@@ -125,6 +128,7 @@ async function getDashboardData(): Promise<DashboardData> {
     const demoLogs = demoMomentumLogs();
     const momentum = calculateMomentumSystem(demoLogs, { weeklyTarget: 4, preferredWorkoutLength: 35 });
     return {
+      userId: null,
       stats: buildStats(demoLogs, momentum).slice(0, 4),
       consistency: 86,
       mostTrained: ["Upper", "Full body", "Core"],
@@ -134,7 +138,8 @@ async function getDashboardData(): Promise<DashboardData> {
       nextBestAction: momentum.recommendation,
       planType: "Free",
       hasPremiumAccess: false,
-      momentum
+      momentum,
+      checklistProgress: {}
     };
   }
 
@@ -145,6 +150,7 @@ async function getDashboardData(): Promise<DashboardData> {
 
   if (!user) {
     return {
+      userId: null,
       stats: buildStats([], calculateMomentumSystem([], { weeklyTarget: 4, preferredWorkoutLength: 35 })).slice(0, 4),
       consistency: 0,
       mostTrained: [],
@@ -154,18 +160,24 @@ async function getDashboardData(): Promise<DashboardData> {
       nextBestAction: "Save your first adaptive workout so FlexFit can learn your rhythm.",
       planType: "Free",
       hasPremiumAccess: false,
-      momentum: calculateMomentumSystem([], { weeklyTarget: 4, preferredWorkoutLength: 35 })
+      momentum: calculateMomentumSystem([], { weeklyTarget: 4, preferredWorkoutLength: 35 }),
+      checklistProgress: {}
     };
   }
 
-  const [{ data: logs }, { data: profile }] = await Promise.all([
+  const [{ data: logs }, { data: profile }, { data: fitnessProfile }] = await Promise.all([
     supabase
       .from("workout_logs")
       .select("completed_at, duration, focus, energy, soreness")
       .eq("user_id", user.id)
       .order("completed_at", { ascending: false })
       .limit(50),
-    supabase.from("profiles").select("plan_type, weekly_training_days, preferred_workout_length").eq("user_id", user.id).maybeSingle()
+    supabase.from("profiles").select("plan_type, weekly_training_days, preferred_workout_length").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("user_fitness_profiles")
+      .select("onboarding_completed, checklist_progress")
+      .eq("user_id", user.id)
+      .maybeSingle()
   ]);
 
   const rows = (logs ?? []) as {
@@ -176,6 +188,13 @@ async function getDashboardData(): Promise<DashboardData> {
     soreness: number | null;
   }[];
   const profileRow = (profile ?? {}) as { plan_type?: unknown; weekly_training_days?: unknown; preferred_workout_length?: unknown };
+  const fitnessProfileRow = (fitnessProfile ?? {}) as { onboarding_completed?: unknown; checklist_progress?: unknown };
+  const checklistProgress = {
+    ...((fitnessProfileRow.checklist_progress ?? {}) as ChecklistProgress),
+    completedProfile:
+      ((fitnessProfileRow.checklist_progress ?? {}) as ChecklistProgress).completedProfile ||
+      fitnessProfileRow.onboarding_completed === true
+  };
   const planType = normalizePlanType(profileRow.plan_type);
   const premiumAccess = hasPremiumAccess(planType);
   const weeklyTarget = typeof profileRow.weekly_training_days === "number" ? profileRow.weekly_training_days : 4;
@@ -199,6 +218,7 @@ async function getDashboardData(): Promise<DashboardData> {
       : 0;
 
   return {
+    userId: user.id,
     stats: buildStats(rows, momentum).slice(0, 4),
     consistency,
     mostTrained,
@@ -219,7 +239,8 @@ async function getDashboardData(): Promise<DashboardData> {
         : "Run a 20-30 minute starter workout and save it as completed.",
     planType: getEffectivePlanType(planType),
     hasPremiumAccess: premiumAccess,
-    momentum
+    momentum,
+    checklistProgress
   };
 }
 
@@ -288,6 +309,10 @@ export default async function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+      </section>
+
+      <section className="mt-6">
+        <NewUserChecklist initialProgress={data.checklistProgress} userId={data.userId} />
       </section>
 
       <div className="mt-6">

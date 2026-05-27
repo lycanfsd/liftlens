@@ -522,12 +522,11 @@ export async function updateDailyWorkoutStatusAction(
     });
 
     if (!historyResult.ok) {
-      return {
-        ok: false,
-        message: `Workout was marked complete, but Progress did not sync yet: ${historyResult.message}`,
-        dailyWorkout: result.record,
-        debugMessage: result.debugMessage
-      };
+      debugProgressSync("legacy workout history sync failed; daily_workouts remains canonical", {
+        user_id: user.id,
+        daily_workout_id: result.record.id,
+        message: historyResult.message
+      });
     }
 
     const { data: profile } = await supabase
@@ -1035,6 +1034,7 @@ export async function markChecklistItemAction(item: string): Promise<ActionResul
   );
 
   if (error) return { ok: false, message: error.message };
+  revalidatePath("/dashboard");
   revalidatePath("/workout");
   revalidatePath("/progress");
   return { ok: true, message: "Checklist updated." };
@@ -1050,6 +1050,12 @@ function shouldRetryLegacyWorkoutInsert(error: { code?: string; message?: string
   );
 }
 
+function debugProgressSync(event: string, details?: Record<string, unknown>) {
+  if (process.env.DEBUG_PROGRESS_ANALYTICS === "true") {
+    console.debug(`[progress-sync] ${event}`, details ?? {});
+  }
+}
+
 async function persistCompletedDailyWorkoutHistory({
   supabase,
   userId,
@@ -1061,6 +1067,13 @@ async function persistCompletedDailyWorkoutHistory({
 }): Promise<ActionResult> {
   const workout = dailyWorkout.workout;
   const input = dailyWorkout.inputSnapshot;
+  debugProgressSync("completed workout history save attempt", {
+    user_id: userId,
+    workout_date: dailyWorkout.workoutDate,
+    daily_workout_id: dailyWorkout.id,
+    title: workout.name,
+    exercise_count: workout.exercises.length
+  });
 
   const { data: existingWorkout, error: existingError } = await supabase
     .from("workouts")
@@ -1072,6 +1085,12 @@ async function persistCompletedDailyWorkoutHistory({
     .maybeSingle();
 
   if (existingError && !shouldRetryLegacyWorkoutInsert(existingError)) {
+    debugProgressSync("workouts lookup failed", {
+      user_id: userId,
+      workout_date: dailyWorkout.workoutDate,
+      message: existingError.message,
+      code: existingError.code
+    });
     return { ok: false, message: existingError.message };
   }
 
@@ -1102,13 +1121,45 @@ async function persistCompletedDailyWorkoutHistory({
       explanation: workout.explanation?.whyThisWorkout ?? workout.why.join("\n")
     };
 
-    const { data: insertedWorkout, error: workoutError } = await supabase
+    let workoutResult = await supabase
       .from("workouts")
       .insert(workoutInsert)
       .select("id")
       .single();
+    let insertedWorkout = workoutResult.data;
+    let workoutError = workoutResult.error;
+
+    if (shouldRetryLegacyWorkoutInsert(workoutError)) {
+      const legacyWorkoutInsert = {
+        user_id: userId,
+        workout_name: workout.name,
+        duration: workout.duration,
+        focus: workout.focus,
+        intensity: workout.intensity,
+        energy: input.energy,
+        soreness: input.soreness,
+        time_available: input.timeAvailable,
+        equipment: input.equipment,
+        gym_crowding: input.crowding,
+        body_focus: input.bodyFocus,
+        warmup: workout.warmup,
+        why_it_fits: workout.why,
+        condensed_version: workout.condensed,
+        completed_exercises: workout.exercises.length
+      };
+
+      workoutResult = await supabase.from("workouts").insert(legacyWorkoutInsert).select("id").single();
+      insertedWorkout = workoutResult.data;
+      workoutError = workoutResult.error;
+    }
 
     if (workoutError || !insertedWorkout) {
+      debugProgressSync("workouts insert failed", {
+        user_id: userId,
+        workout_date: dailyWorkout.workoutDate,
+        message: workoutError?.message,
+        code: workoutError?.code
+      });
       return { ok: false, message: workoutError?.message ?? "Completed workout could not be added to history." };
     }
 
@@ -1131,7 +1182,12 @@ async function persistCompletedDailyWorkoutHistory({
     );
 
     if (exerciseError) {
-      return { ok: false, message: exerciseError.message };
+      debugProgressSync("workout exercises insert failed", {
+        user_id: userId,
+        workout_id: workoutId,
+        message: exerciseError.message,
+        code: exerciseError.code
+      });
     }
   }
 
@@ -1143,6 +1199,12 @@ async function persistCompletedDailyWorkoutHistory({
     .maybeSingle();
 
   if (logLookupError) {
+    debugProgressSync("workout log lookup failed", {
+      user_id: userId,
+      workout_id: workoutId,
+      message: logLookupError.message,
+      code: logLookupError.code
+    });
     return { ok: false, message: logLookupError.message };
   }
 
@@ -1158,10 +1220,21 @@ async function persistCompletedDailyWorkoutHistory({
     });
 
     if (logError) {
+      debugProgressSync("workout log insert failed", {
+        user_id: userId,
+        workout_id: workoutId,
+        message: logError.message,
+        code: logError.code
+      });
       return { ok: false, message: logError.message };
     }
   }
 
+  debugProgressSync("completed workout history save success", {
+    user_id: userId,
+    workout_date: dailyWorkout.workoutDate,
+    workout_id: workoutId
+  });
   return { ok: true, message: "Workout completed and synced to Progress." };
 }
 

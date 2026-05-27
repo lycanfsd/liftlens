@@ -1,6 +1,8 @@
 export type ProgressWorkoutLog = {
   id: string;
   workoutId?: string | null;
+  workoutDate?: string;
+  title?: string | null;
   completedAt: string;
   duration: number;
   focus: string;
@@ -11,6 +13,7 @@ export type ProgressWorkoutLog = {
 
 export type ExercisePerformanceEntry = {
   id: string;
+  workoutId?: string | null;
   date: string;
   exerciseName: string;
   muscleGroup?: string | null;
@@ -79,11 +82,21 @@ export type ProgressOverview = {
   recoverySubtext: string;
 };
 
+export type RecentCompletedWorkout = {
+  id: string;
+  date: string;
+  title: string;
+  totalSets: number;
+  totalVolume: number;
+  completedAt: string;
+};
+
 export type ProgressAnalytics = {
   overview: ProgressOverview;
   consistency: ConsistencyAnalytics;
   strength: StrengthProgressItem[];
   muscleGroups: MuscleGroupVolume[];
+  recentWorkouts: RecentCompletedWorkout[];
   imbalanceInsights: string[];
   coachInsights: string[];
   hasRealWorkoutData: boolean;
@@ -327,6 +340,33 @@ function calculateMuscleGroupVolume(entries: ExercisePerformanceEntry[]) {
   });
 }
 
+function calculateRecentWorkouts(logs: ProgressWorkoutLog[], entries: ExercisePerformanceEntry[]) {
+  const entriesByWorkout = entries.reduce<Record<string, ExercisePerformanceEntry[]>>((acc, entry) => {
+    const key = entry.workoutId ?? getDateKey(new Date(entry.date));
+    acc[key] = [...(acc[key] ?? []), entry];
+    return acc;
+  }, {});
+
+  return [...logs]
+    .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
+    .slice(0, 6)
+    .map((log) => {
+      const dateKey = log.workoutDate ?? getDateKey(new Date(log.completedAt));
+      const workoutEntries = entriesByWorkout[log.workoutId ?? log.id] ?? entriesByWorkout[dateKey] ?? [];
+      const totalSets = workoutEntries.reduce((sum, entry) => sum + entry.sets, 0);
+      const totalVolume = workoutEntries.reduce((sum, entry) => sum + entry.sets * entry.reps * parseNumber(entry.weight), 0);
+
+      return {
+        id: log.id,
+        date: dateKey,
+        title: log.title ?? log.focus,
+        totalSets,
+        totalVolume,
+        completedAt: log.completedAt
+      };
+    });
+}
+
 function imbalanceInsights(groups: MuscleGroupVolume[]) {
   const getSets = (name: MuscleGroupName) => groups.find((group) => group.muscleGroup === name)?.sets ?? 0;
   const push = getSets("Chest") + getSets("Shoulders") + getSets("Triceps");
@@ -414,6 +454,7 @@ export function buildProgressAnalytics({
   const consistency = calculateConsistency(workingLogs, weeklyTarget);
   const strength = strengthProgress(workingExercises);
   const muscleGroups = calculateMuscleGroupVolume(workingExercises);
+  const recentWorkouts = calculateRecentWorkouts(workingLogs, workingExercises);
   const imbalances = imbalanceInsights(muscleGroups);
   const weekExercises = workingExercises.filter((entry) => isAfterOrSame(entry.date, weekStart()));
   const weeklyVolume = weekExercises.reduce((sum, entry) => sum + entry.sets * entry.reps * parseNumber(entry.weight), 0);
@@ -461,6 +502,7 @@ export function buildProgressAnalytics({
     consistency,
     strength,
     muscleGroups,
+    recentWorkouts,
     imbalanceInsights: imbalances,
     coachInsights,
     hasRealWorkoutData,
