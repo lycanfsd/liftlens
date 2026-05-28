@@ -197,7 +197,7 @@ export function ExerciseActionButtons({
         aria-label={`Watch demo for ${exerciseName}`}
         title={`Watch demo for ${exerciseName}`}
         onClick={onVideo}
-        className="h-9 w-9 rounded-xl border border-white/10 bg-white/[0.035] text-muted-foreground hover:border-primary/35 hover:bg-primary/10 hover:text-primary"
+        className="h-11 w-11 rounded-xl border border-white/10 bg-white/[0.035] text-muted-foreground hover:border-primary/35 hover:bg-primary/10 hover:text-primary sm:h-9 sm:w-9"
       >
         <Video className="h-4 w-4" />
       </Button>
@@ -208,7 +208,7 @@ export function ExerciseActionButtons({
         aria-label={`View instructions for ${exerciseName}`}
         title={`View instructions for ${exerciseName}`}
         onClick={onInstructions}
-        className="h-9 w-9 rounded-xl border border-white/10 bg-white/[0.035] text-muted-foreground hover:border-primary/35 hover:bg-primary/10 hover:text-primary"
+        className="h-11 w-11 rounded-xl border border-white/10 bg-white/[0.035] text-muted-foreground hover:border-primary/35 hover:bg-primary/10 hover:text-primary sm:h-9 sm:w-9"
       >
         <FileText className="h-4 w-4" />
       </Button>

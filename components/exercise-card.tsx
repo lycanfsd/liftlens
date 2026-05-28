@@ -130,9 +130,9 @@ export function ExerciseCard({
           {index + 1}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h4 className="font-semibold text-white">{exercise.name}</h4>
+              <h4 className="break-words font-semibold text-white">{exercise.name}</h4>
               <p className="mt-1 text-xs font-medium text-muted-foreground">{toTitleCase(exercise.muscleGroup)}</p>
             </div>
             <ExerciseActionButtons
