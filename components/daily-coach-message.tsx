@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { getLocalDateKey } from "@/lib/dates";
 
 type DailyCoachApiMessage = {
   id: string;
@@ -33,9 +34,7 @@ function getSourceLabel(source: DailyCoachApiMessage["source"]) {
 }
 
 function getClientDateKey() {
-  const now = new Date();
-  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-  return localDate.toISOString().slice(0, 10);
+  return getLocalDateKey();
 }
 
 export function DailyCoachMessage() {

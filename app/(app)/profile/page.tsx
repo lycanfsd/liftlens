@@ -8,9 +8,11 @@ import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { APP_NAME } from "@/lib/brand";
+import { getLocalDateKeyFromMaybeDate, getStartOfLocalWeek } from "@/lib/dates";
 import { normalizePlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { GeneratedWorkout } from "@/lib/types";
 
 type ProfilePageData = {
   email: string;
@@ -30,6 +32,14 @@ type ProfilePageData = {
 type WorkoutLogRow = {
   completed_at: string;
   focus: string | null;
+};
+
+type DailyProfileWorkoutRow = {
+  id: string;
+  workout_date: string;
+  workout_json: unknown;
+  title: string | null;
+  status: string | null;
 };
 
 function formatDate(value: string | null) {
@@ -61,15 +71,31 @@ function getMostTrainedFocus(rows: WorkoutLogRow[]) {
 }
 
 function buildSnapshot(rows: WorkoutLogRow[], weeklyTrainingDays: number | "") {
-  const now = Date.now();
   const weeklyTarget = typeof weeklyTrainingDays === "number" ? weeklyTrainingDays : 4;
-  const weekRows = rows.filter((row) => now - new Date(row.completed_at).getTime() <= 7 * 86400000);
+  const startOfWeek = getStartOfLocalWeek();
+  const weekRows = rows.filter((row) => new Date(row.completed_at).getTime() >= startOfWeek.getTime());
 
   return {
     completedWorkouts: rows.length,
     mostTrainedFocus: getMostTrainedFocus(rows),
     consistency: Math.min(100, Math.round((weekRows.length / weeklyTarget) * 100)),
     weeklySessions: weekRows.length
+  };
+}
+
+function isGeneratedWorkout(value: unknown): value is GeneratedWorkout {
+  if (typeof value !== "object" || value === null) return false;
+  const workout = value as Partial<GeneratedWorkout>;
+  return typeof workout.name === "string" && typeof workout.focus === "string";
+}
+
+function dailyRowToWorkoutLog(row: DailyProfileWorkoutRow): WorkoutLogRow | null {
+  if (row.status !== "completed" || !row.workout_date) return null;
+  const workout = isGeneratedWorkout(row.workout_json) ? row.workout_json : null;
+
+  return {
+    completed_at: `${row.workout_date}T12:00:00`,
+    focus: row.title ?? workout?.focus ?? "Completed workout"
   };
 }
 
@@ -140,9 +166,16 @@ async function getProfilePageData(): Promise<ProfilePageData> {
     };
   }
 
-  const [{ data: profile }, { data: onboarding }, { data: logs }] = await Promise.all([
+  const [{ data: profile }, { data: onboarding }, { data: dailyRows }, { data: logs }] = await Promise.all([
     supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
     supabase.from("onboarding_answers").select("*").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("daily_workouts")
+      .select("id, workout_date, workout_json, title, status")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .order("workout_date", { ascending: false })
+      .limit(100),
     supabase
       .from("workout_logs")
       .select("completed_at, focus")
@@ -181,7 +214,13 @@ async function getProfilePageData(): Promise<ProfilePageData> {
     injury_notes: toStringValue(profileRow.injury_notes)
   };
 
-  const rows = (logs ?? []) as WorkoutLogRow[];
+  const dailyLogs = ((dailyRows ?? []) as DailyProfileWorkoutRow[]).map(dailyRowToWorkoutLog).filter(Boolean) as WorkoutLogRow[];
+  const dailyDates = new Set(dailyLogs.map((row) => getLocalDateKeyFromMaybeDate(row.completed_at)));
+  const legacyLogs = ((logs ?? []) as WorkoutLogRow[]).filter((row) => {
+    const dateKey = getLocalDateKeyFromMaybeDate(row.completed_at);
+    return !dailyDates.has(dateKey);
+  });
+  const rows = [...dailyLogs, ...legacyLogs];
 
   return {
     email: user.email ?? (toStringValue(profileRow.email) || `${APP_NAME} member`),

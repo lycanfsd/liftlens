@@ -31,6 +31,10 @@ export const equipmentOptions: { value: EquipmentAccess; label: string }[] = [
   { value: "full-gym", label: "Full gym" },
   { value: "home-gym", label: "Home gym" },
   { value: "dumbbells-only", label: "Dumbbells only" },
+  { value: "barbell-rack", label: "Barbell + rack" },
+  { value: "machines", label: "Machines" },
+  { value: "cables", label: "Cables" },
+  { value: "bands", label: "Resistance bands" },
   { value: "bodyweight", label: "Bodyweight" }
 ];
 
@@ -49,7 +53,10 @@ export const weakPoints: { value: WeakPoint; label: string }[] = [
   { value: "arms", label: "Arms" },
   { value: "back", label: "Back" },
   { value: "legs", label: "Legs" },
+  { value: "quads", label: "Quads" },
+  { value: "hamstrings", label: "Hamstrings" },
   { value: "glutes", label: "Glutes" },
+  { value: "calves", label: "Calves" },
   { value: "core", label: "Core" },
   { value: "conditioning", label: "Conditioning" }
 ];

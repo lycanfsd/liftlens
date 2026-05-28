@@ -37,12 +37,33 @@ export function getWeakPointPlan(weakPoint: WeakPoint): WeakPointPlan {
       commonMistakes: ["Changing exercises too often", "Skipping unilateral work", "Cutting range of motion short"],
       progressMetric: "Track split squat reps per side at the same load."
     },
+    quads: {
+      weakPoint: "quads",
+      accessories: ["Front-foot elevated split squat: 3 x 8 per side", "Leg extension or tempo squat: 3 x 10-15"],
+      frequency: "Add one quad-biased accessory after lower days twice weekly.",
+      commonMistakes: ["Letting hips shoot back", "Rushing the eccentric", "Cutting knee range short"],
+      progressMetric: "Track controlled quad-biased reps at the same load."
+    },
+    hamstrings: {
+      weakPoint: "hamstrings",
+      accessories: ["Romanian deadlift: 3 x 8-10", "Leg curl or sliding hamstring curl: 3 x 10-12"],
+      frequency: "Use one hinge and one curl pattern across the week.",
+      commonMistakes: ["Turning hinges into squats", "Losing neutral spine", "Skipping slow eccentrics"],
+      progressMetric: "Track clean hinge reps and curl reps week to week."
+    },
     glutes: {
       weakPoint: "glutes",
       accessories: ["Hip thrust or glute bridge: 3 x 8-12", "Cable kickback or band abduction: 2 x 15-20"],
       frequency: "Add glute work after lower days, twice weekly.",
       commonMistakes: ["Overarching the low back", "Skipping the lockout squeeze", "Only doing very light bands"],
       progressMetric: "Track hip thrust load plus clean top-position pauses."
+    },
+    calves: {
+      weakPoint: "calves",
+      accessories: ["Standing calf raise: 4 x 8-12", "Seated or bent-knee calf raise: 3 x 12-20"],
+      frequency: "Train calves in short blocks 2-3 times weekly.",
+      commonMistakes: ["Bouncing reps", "Skipping the stretched pause", "Only training straight-knee raises"],
+      progressMetric: "Track full-range calf raise reps with a bottom pause."
     },
     core: {
       weakPoint: "core",

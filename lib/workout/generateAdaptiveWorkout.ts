@@ -5,6 +5,7 @@ import type {
   BodyFocus,
   DailyCheckIn,
   DiscomfortArea,
+  EquipmentAccess,
   ExercisePrescription,
   FitnessGoal,
   GeneratedWorkout,
@@ -30,6 +31,7 @@ export type WorkoutEngineContext = {
   preferredSplit: PreferredSplit;
   weeklyTrainingDays: number;
   preferredWorkoutLength: number | null;
+  equipmentAccess: EquipmentAccess;
   weakPoints: WeakPoint[];
   injuryNotes: string | null;
   dislikedExercises: string[];
@@ -75,7 +77,7 @@ type ExerciseSelectionDebug = {
   avoided: string[];
 };
 
-const muscleGroups: WeakPoint[] = ["chest", "shoulders", "arms", "back", "legs", "glutes", "core", "conditioning"];
+const muscleGroups: WeakPoint[] = ["chest", "shoulders", "arms", "back", "legs", "quads", "hamstrings", "glutes", "calves", "core", "conditioning"];
 
 const defaultSoreness: Record<WeakPoint, number> = {
   chest: 2,
@@ -83,7 +85,10 @@ const defaultSoreness: Record<WeakPoint, number> = {
   arms: 2,
   back: 2,
   legs: 2,
+  quads: 2,
+  hamstrings: 2,
   glutes: 2,
+  calves: 2,
   core: 2,
   conditioning: 2
 };
@@ -94,6 +99,7 @@ const defaultContext: WorkoutEngineContext = {
   preferredSplit: "auto",
   weeklyTrainingDays: 4,
   preferredWorkoutLength: null,
+  equipmentAccess: "full-gym",
   weakPoints: [],
   injuryNotes: null,
   dislikedExercises: [],
@@ -538,12 +544,36 @@ function injuryFromNotes(notes: string | null) {
 
 function affectedByArea(template: ExerciseTemplate, area: DiscomfortArea) {
   if (area === "none") return false;
+  const targets = weakPointTargets(area);
   return (
-    template.primaryTargets.includes(area) ||
-    template.secondaryTargets.includes(area) ||
+    targets.some((target) => template.primaryTargets.includes(target)) ||
+    targets.some((target) => template.secondaryTargets.includes(target)) ||
     template.contraindications.includes(area) ||
-    template.muscleGroup === area
+    targets.some((target) => template.muscleGroup === target)
   );
+}
+
+function weakPointTargets(point: WeakPoint): WeakPoint[] {
+  if (point === "quads") return ["legs"];
+  if (point === "hamstrings") return ["legs", "glutes"];
+  if (point === "calves") return ["legs", "conditioning"];
+  return [point];
+}
+
+function weakPointMatchesTemplate(template: ExerciseTemplate, point: WeakPoint) {
+  const targets = weakPointTargets(point);
+  return targets.some(
+    (target) =>
+      template.primaryTargets.includes(target) ||
+      template.secondaryTargets.includes(target) ||
+      template.muscleGroup === target
+  );
+}
+
+function sorenessForWeakPoint(soreness: Record<WeakPoint, number>, point: WeakPoint) {
+  const direct = soreness[point];
+  if (typeof direct === "number") return direct;
+  return Math.min(...weakPointTargets(point).map((target) => soreness[target] ?? 2));
 }
 
 function injuryPenalty(template: ExerciseTemplate, input: DailyCheckIn, context: WorkoutEngineContext) {
@@ -599,8 +629,12 @@ function scoreExercise(
   const soreness = input.sorenessByMuscle as Record<WeakPoint, number>;
   const goalScore = template[profile.primaryScore] * 6 + template[profile.secondaryScore] * 2;
   const targetScore = template.focus.includes(focus) || template.focus.includes("full-body") ? 14 : 0;
-  const weakPointScore = context.weakPoints.some((point) => template.primaryTargets.includes(point)) ? 18 : 0;
-  const freshWeakPointBonus = context.weakPoints.some((point) => template.primaryTargets.includes(point) && soreness[point] <= 2) ? 8 : 0;
+  const weakPointScore = context.weakPoints.some((point) => weakPointMatchesTemplate(template, point)) ? 18 : 0;
+  const freshWeakPointBonus = context.weakPoints.some(
+    (point) => weakPointMatchesTemplate(template, point) && sorenessForWeakPoint(soreness, point) <= 2
+  )
+    ? 8
+    : 0;
   const lowEnergyBonus =
     input.energy <= 2 || input.sleepQuality <= 2
       ? template.stabilityDemand <= 2 && template.fatigueScore <= 3
@@ -676,8 +710,8 @@ function prioritizedMuscles(input: DailyCheckIn, context: WorkoutEngineContext, 
                 ? ["conditioning", "legs", "core"]
                 : ["back", "legs", "chest", "glutes"];
 
-  const weakPoints = context.weakPoints.filter((point) => soreness[point] <= 3);
-  const merged = [...weakPoints, ...fromFocus].filter((point) => soreness[point] < 5);
+  const weakPoints = context.weakPoints.filter((point) => sorenessForWeakPoint(soreness, point) <= 3);
+  const merged = [...weakPoints, ...fromFocus].filter((point) => sorenessForWeakPoint(soreness, point) < 5);
   return Array.from(new Set(merged)).slice(0, 4);
 }
 
@@ -729,7 +763,7 @@ function restForExercise(template: ExerciseTemplate, mode: TrainingGoalMode, inp
 
 function buildRationale(template: ExerciseTemplate, input: DailyCheckIn, context: WorkoutEngineContext, dose: DoseDecision) {
   const reasons: string[] = [];
-  if (context.weakPoints.some((point) => template.primaryTargets.includes(point))) {
+  if (context.weakPoints.some((point) => weakPointMatchesTemplate(template, point))) {
     reasons.push("prioritized because it targets a weak point early");
   }
   if (input.crowding === "packed" && template.crowdingFriendliness >= 4) {
@@ -838,9 +872,9 @@ function chooseExercises(
     const match = scored.find(
       ({ exercise, score }) =>
         score > -50 &&
-        exercise.primaryTargets.includes(priority) &&
+        weakPointMatchesTemplate(exercise, priority) &&
         !chosen.includes(exercise) &&
-        (input.sorenessByMuscle[priority] ?? 2) <= 3
+        sorenessForWeakPoint(input.sorenessByMuscle as Record<WeakPoint, number>, priority) <= 3
     )?.exercise;
     if (match) chosen.push(match);
   }

@@ -3,6 +3,7 @@ import { BarChart3 } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { ProgressAnalyticsCenter } from "@/components/progress-analytics-center";
 import { Button } from "@/components/ui/button";
+import { getLocalDateKeyFromMaybeDate } from "@/lib/dates";
 import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
 import type { PRHistoryEntry } from "@/lib/progress/pr-history";
 import {
@@ -108,7 +109,7 @@ function isGeneratedWorkout(value: unknown): value is GeneratedWorkout {
 }
 
 function completedAtForDailyWorkout(row: DailyWorkoutProgressRow) {
-  return row.updated_at ?? row.created_at ?? `${row.workout_date}T12:00:00.000Z`;
+  return `${row.workout_date}T12:00:00`;
 }
 
 function dailyWorkoutToLog(row: DailyWorkoutProgressRow, workout: GeneratedWorkout): ProgressWorkoutLog {
@@ -216,13 +217,13 @@ async function getProgressAnalytics() {
   const dailyExercises = completedDailyRows.flatMap((item) => dailyWorkoutToExercises(item.row, item.workout));
   const legacyLogRows = ((logs ?? []) as WorkoutLogRow[]).filter((row) => {
     if (!row.completed_at) return false;
-    const dateKey = row.completed_at.slice(0, 10);
+    const dateKey = getLocalDateKeyFromMaybeDate(row.completed_at);
     return !dailyWorkoutDates.has(dateKey);
   });
   const legacyWorkoutLogs: ProgressWorkoutLog[] = legacyLogRows.map((row, index) => ({
     id: row.workout_id ?? `log-${index}`,
     workoutId: row.workout_id,
-    workoutDate: row.completed_at.slice(0, 10),
+    workoutDate: getLocalDateKeyFromMaybeDate(row.completed_at),
     title: row.focus ?? "Completed workout",
     completedAt: row.completed_at,
     duration: row.duration ?? 35,
@@ -303,7 +304,8 @@ async function getProgressAnalytics() {
     analytics: buildProgressAnalytics({
       logs: workoutLogs,
       exercises,
-      weeklyTarget
+      weeklyTarget,
+      prEntries
     }),
     userId: user.id,
     prEntries,

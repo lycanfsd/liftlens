@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { APP_NAME } from "@/lib/brand";
+import { getLocalDateKey, getLocalDateKeyFromMaybeDate, getStartOfLocalWeek } from "@/lib/dates";
 import { normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -31,6 +32,7 @@ const PROFILE_COLUMNS = [
   "biggest_struggle"
 ];
 const WORKOUT_LOG_COLUMNS = ["completed_at", "focus", "energy", "soreness", "duration"];
+const DAILY_WORKOUT_CONTEXT_COLUMNS = ["workout_date", "workout_json", "input_snapshot", "title", "status", "updated_at", "created_at"];
 
 type DailyMessageSource = "fake" | "openai" | "fallback";
 
@@ -49,6 +51,16 @@ type WorkoutLogContext = {
   energy: number | null;
   soreness: number | null;
   duration: number | null;
+};
+
+type DailyWorkoutContext = {
+  workout_date: string;
+  workout_json: unknown;
+  input_snapshot: unknown;
+  title: string | null;
+  status: string | null;
+  updated_at: string | null;
+  created_at: string | null;
 };
 
 type DailyCoachMessageRow = {
@@ -132,7 +144,7 @@ function isDateKey(value: unknown): value is string {
 }
 
 function getServerDateKey() {
-  return new Date().toISOString().slice(0, 10);
+  return getLocalDateKey();
 }
 
 function getMessageDateFromRequest(request: Request, bodyDate?: unknown) {
@@ -222,10 +234,10 @@ async function authenticate(): Promise<
 }
 
 function buildWorkoutContext(profile: ProfileContext | null, logs: WorkoutLogContext[]): WorkoutContext {
-  const now = Date.now();
-  const weekLogs = logs.filter((log) => now - new Date(log.completed_at).getTime() <= 7 * 86400000);
+  const startOfWeek = getStartOfLocalWeek();
+  const weekLogs = logs.filter((log) => new Date(log.completed_at).getTime() >= startOfWeek.getTime());
   const weeklyTarget = Math.max(1, profile?.weekly_training_days ?? 4);
-  const completedThisWeek = weekLogs.length || 2;
+  const completedThisWeek = weekLogs.length;
   const averageEnergy =
     logs.length > 0
       ? logs.reduce((sum, log) => sum + (log.energy ?? 3), 0) / logs.length
@@ -256,6 +268,28 @@ function buildWorkoutContext(profile: ProfileContext | null, logs: WorkoutLogCon
   };
 }
 
+function dailyWorkoutToContextLog(row: DailyWorkoutContext): WorkoutLogContext | null {
+  if (row.status !== "completed" || !row.workout_date) return null;
+
+  const workout = typeof row.workout_json === "object" && row.workout_json !== null
+    ? (row.workout_json as { duration?: unknown; focus?: unknown; name?: unknown })
+    : {};
+  const input = typeof row.input_snapshot === "object" && row.input_snapshot !== null
+    ? (row.input_snapshot as { energy?: unknown; soreness?: unknown })
+    : {};
+
+  return {
+    completed_at: `${row.workout_date}T12:00:00`,
+    focus:
+      row.title ??
+      (typeof workout.name === "string" ? workout.name : null) ??
+      (typeof workout.focus === "string" ? workout.focus : "Full body"),
+    energy: typeof input.energy === "number" ? input.energy : null,
+    soreness: typeof input.soreness === "number" ? input.soreness : null,
+    duration: typeof workout.duration === "number" ? workout.duration : null
+  };
+}
+
 function generateFakeCoachMessage(context: WorkoutContext) {
   if (context.averageEnergy <= 2.8) {
     return `Today's note: keep the bar low enough to start. You are ${context.completedThisWeek}/${context.weeklyTarget} sessions into the week, so a ${Math.min(context.preferredLength, 25)}-minute ${context.lastFocus.toLowerCase()} session with 1-2 reps in reserve still counts as a real win. Low energy does not mean no progress.`;
@@ -277,12 +311,30 @@ async function getWorkoutContext(
   userId: string,
   profile: ProfileContext | null
 ) {
-  const { data, error } = await supabase
-    .from("workout_logs")
-    .select(WORKOUT_LOG_COLUMNS.join(", "))
-    .eq("user_id", userId)
-    .order("completed_at", { ascending: false })
-    .limit(14);
+  const [{ data: dailyRows, error: dailyError }, { data: legacyRows, error }] = await Promise.all([
+    supabase
+      .from("daily_workouts")
+      .select(DAILY_WORKOUT_CONTEXT_COLUMNS.join(", "))
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .order("workout_date", { ascending: false })
+      .limit(14),
+    supabase
+      .from("workout_logs")
+      .select(WORKOUT_LOG_COLUMNS.join(", "))
+      .eq("user_id", userId)
+      .order("completed_at", { ascending: false })
+      .limit(14)
+  ]);
+
+  if (dailyError) {
+    logSupabaseError({
+      error: dailyError,
+      operation: "select completed daily workouts for daily AI context",
+      table: "daily_workouts",
+      expectedColumns: DAILY_WORKOUT_CONTEXT_COLUMNS
+    });
+  }
 
   if (error) {
     logSupabaseError({
@@ -293,7 +345,16 @@ async function getWorkoutContext(
     });
   }
 
-  return buildWorkoutContext(profile, (data ?? []) as unknown as WorkoutLogContext[]);
+  const dailyLogs = ((dailyRows ?? []) as unknown as DailyWorkoutContext[])
+    .map(dailyWorkoutToContextLog)
+    .filter((row): row is WorkoutLogContext => Boolean(row));
+  const dailyDates = new Set(dailyLogs.map((row) => getLocalDateKeyFromMaybeDate(row.completed_at)));
+  const legacyLogs = ((legacyRows ?? []) as unknown as WorkoutLogContext[]).filter((row) => {
+    const dateKey = getLocalDateKeyFromMaybeDate(row.completed_at);
+    return !dailyDates.has(dateKey);
+  });
+
+  return buildWorkoutContext(profile, [...dailyLogs, ...legacyLogs]);
 }
 
 async function generateOpenAiCoachMessage(context: WorkoutContext) {

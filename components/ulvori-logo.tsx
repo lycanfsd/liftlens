@@ -1,5 +1,7 @@
 import Image from "next/image";
 
+import { cn } from "@/lib/utils";
+
 type UlvoriLogoProps = {
   variant?: "icon" | "mark" | "horizontal" | "compact" | "sidebar";
   size?: "sm" | "md" | "lg";
@@ -32,7 +34,7 @@ export function UlvoriLogo({
           alt="Ulvori wolf U icon"
           width={sizes[size].sidebar}
           height={sizes[size].sidebar}
-          className="shrink-0 rounded-xl object-contain"
+          className="h-auto w-auto shrink-0 rounded-xl object-contain"
           priority
         />
         <span className="min-w-0 leading-tight">
@@ -53,7 +55,7 @@ export function UlvoriLogo({
       alt={variant === "icon" || variant === "mark" ? "Ulvori wolf U icon" : "Ulvori logo"}
       width={width}
       height={height}
-      className={`h-auto object-contain ${className}`}
+      className={cn("h-auto w-auto object-contain", className)}
       priority={variant === "compact" || variant === "horizontal"}
     />
   );

@@ -38,6 +38,7 @@ import {
   programPhaseOptions,
   weakPoints
 } from "@/lib/constants";
+import { getLocalDateKey } from "@/lib/dates";
 import type {
   BodyFocus,
   DailyCheckIn,
@@ -56,10 +57,6 @@ import { generateWorkout, type WorkoutEngineContext } from "@/lib/workout/genera
 import { cn } from "@/lib/utils";
 
 const sorenessMuscles: WeakPoint[] = ["chest", "shoulders", "back", "legs", "glutes", "core"];
-
-function getTodayWorkoutDateKey() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 const defaultInput: DailyCheckIn = {
   timeAvailable: 35,
@@ -319,7 +316,15 @@ export function WorkoutGenerator({
   initialDailyWorkout?: DailyWorkoutRecord | null;
   currentUserId?: string | null;
 }) {
-  const initialInput = initialDailyWorkout?.inputSnapshot ?? defaultInput;
+  const defaultInputForContext = useMemo(
+    () => ({
+      ...defaultInput,
+      equipment: engineContext?.equipmentAccess ?? defaultInput.equipment
+    }),
+    [engineContext?.equipmentAccess]
+  );
+  const initialDailyWorkoutForToday = initialDailyWorkout?.workoutDate === getLocalDateKey() ? initialDailyWorkout : null;
+  const initialInput = initialDailyWorkoutForToday?.inputSnapshot ?? defaultInputForContext;
   const {
     dailyWorkout,
     source: persistenceSource,
@@ -327,17 +332,17 @@ export function WorkoutGenerator({
     saveLocalFallback,
     updateLocalStatus
   } = useDailyWorkoutPersistence({
-    initialDailyWorkout,
+    initialDailyWorkout: initialDailyWorkoutForToday,
     currentUserId
   });
   const [input, setInput] = useState<DailyCheckIn>(initialInput);
-  const [workout, setWorkout] = useState<GeneratedWorkout>(() => initialDailyWorkout?.workout ?? generateWorkout(initialInput, engineContext));
+  const [workout, setWorkout] = useState<GeneratedWorkout>(() => initialDailyWorkoutForToday?.workout ?? generateWorkout(initialInput, engineContext));
   const [message, setMessage] = useState(
-    initialDailyWorkout ? "Today's workout loaded." : `Check in once. ${APP_NAME} will save today's plan after generation.`
+    initialDailyWorkoutForToday ? "Today's workout loaded." : `Check in once. ${APP_NAME} will save today's plan after generation.`
   );
   const [viewMode, setViewMode] = useState<WorkoutViewMode>("simple");
-  const [hasGenerated, setHasGenerated] = useState(Boolean(initialDailyWorkout));
-  const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkout);
+  const [hasGenerated, setHasGenerated] = useState(Boolean(initialDailyWorkoutForToday));
+  const [isEditingInputs, setIsEditingInputs] = useState(!initialDailyWorkoutForToday);
   const [showRegenerateOptions, setShowRegenerateOptions] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -424,7 +429,7 @@ export function WorkoutGenerator({
   }
 
   function resetInput() {
-    const resetTo = dailyWorkout?.inputSnapshot ?? defaultInput;
+    const resetTo = dailyWorkout?.inputSnapshot ?? defaultInputForContext;
     setInput(resetTo);
     setWorkout(dailyWorkout?.workout ?? generateWorkout(resetTo, engineContext));
     setHasGenerated(Boolean(dailyWorkout));
@@ -441,7 +446,8 @@ export function WorkoutGenerator({
     startTransition(async () => {
       try {
         const result = await generateAdaptiveWorkoutAction(input, engineContext, {
-          overwriteExisting
+          overwriteExisting,
+          workoutDate: dailyWorkout?.workoutDate ?? getLocalDateKey()
         });
         setWorkout(result.workout);
         if (result.dailyWorkout) {
@@ -470,7 +476,7 @@ export function WorkoutGenerator({
           return;
         }
 
-        const result = await updateDailyWorkoutStatusAction("started", dailyWorkout?.id);
+        const result = await updateDailyWorkoutStatusAction("started", dailyWorkout?.id, dailyWorkout?.workoutDate ?? getLocalDateKey());
         if (result.dailyWorkout) setDailyWorkout(result.dailyWorkout, "backend");
         setMessage(result.message);
         document.getElementById("workout-main")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -490,7 +496,7 @@ export function WorkoutGenerator({
           return;
         }
 
-        const statusResult = await updateDailyWorkoutStatusAction("completed", dailyWorkout?.id);
+        const statusResult = await updateDailyWorkoutStatusAction("completed", dailyWorkout?.id, dailyWorkout?.workoutDate ?? getLocalDateKey());
         const completedRecord = statusResult.dailyWorkout?.status === "completed" ? statusResult.dailyWorkout : null;
 
         if (completedRecord) {
@@ -524,7 +530,7 @@ export function WorkoutGenerator({
           ? "Skipped"
           : "Planned";
   const isTodayWorkoutCompleted =
-    dailyWorkout?.status === "completed" && dailyWorkout.workoutDate === getTodayWorkoutDateKey();
+    dailyWorkout?.status === "completed" && dailyWorkout.workoutDate === getLocalDateKey();
   const showCompletedBanner = isTodayWorkoutCompleted && !showCompletionModal;
   const nextBestStep =
     input.soreness >= 4

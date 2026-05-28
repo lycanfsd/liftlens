@@ -861,7 +861,7 @@ export const exerciseLibrary: ExerciseTemplate[] = [
 ];
 
 export function equipmentFits(template: ExerciseTemplate, access: EquipmentAccess) {
-  if (template.equipment === "bodyweight" || template.equipment === "band") return true;
+  if (template.equipment === "bodyweight") return true;
   if (access === "full-gym") return true;
   if (access === "home-gym") {
     return ["dumbbells-only", "bodyweight", "kettlebell", "barbell", "band"].includes(template.equipment);
@@ -869,11 +869,25 @@ export function equipmentFits(template: ExerciseTemplate, access: EquipmentAcces
   if (access === "dumbbells-only") {
     return ["dumbbells-only", "bodyweight", "band"].includes(template.equipment);
   }
+  if (access === "barbell-rack") {
+    return ["barbell", "bodyweight", "band"].includes(template.equipment);
+  }
+  if (access === "machines") {
+    return ["machine", "bodyweight", "band"].includes(template.equipment);
+  }
+  if (access === "cables") {
+    return ["cable", "bodyweight", "band"].includes(template.equipment);
+  }
+  if (access === "bands") {
+    return ["band", "bodyweight"].includes(template.equipment);
+  }
   return false;
 }
 
 export function focusForWeakPoint(weakPoint: WeakPoint): BodyFocus {
-  if (weakPoint === "legs" || weakPoint === "glutes") return "lower";
+  if (weakPoint === "legs" || weakPoint === "quads" || weakPoint === "hamstrings" || weakPoint === "glutes" || weakPoint === "calves") {
+    return "lower";
+  }
   if (weakPoint === "conditioning") return "conditioning";
   if (weakPoint === "core") return "core";
   if (weakPoint === "back" || weakPoint === "arms") return "pull";

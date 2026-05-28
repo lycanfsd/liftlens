@@ -1,3 +1,4 @@
+import { getLocalDateKey } from "@/lib/dates";
 import { clamp } from "@/lib/utils";
 
 export type MomentumState =
@@ -96,7 +97,10 @@ function average(values: number[]) {
 function uniqueTrainingDays(logs: MomentumLog[]) {
   return new Set(
     logs
-      .map((log) => parseLogDate(log)?.toISOString().slice(0, 10))
+      .map((log) => {
+        const date = parseLogDate(log);
+        return date ? getLocalDateKey(date) : null;
+      })
       .filter((value): value is string => Boolean(value))
   );
 }

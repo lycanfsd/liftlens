@@ -1,3 +1,15 @@
+import {
+  addLocalDays,
+  dayMs,
+  getLocalDateKey,
+  getLocalDateKeyFromMaybeDate,
+  getLocalToday,
+  getStartOfLocalMonth,
+  getStartOfLocalWeek,
+  parseLocalDateKey
+} from "@/lib/dates";
+import type { PRHistoryEntry } from "@/lib/progress/pr-history";
+
 export type ProgressWorkoutLog = {
   id: string;
   workoutId?: string | null;
@@ -101,9 +113,8 @@ export type ProgressAnalytics = {
   coachInsights: string[];
   hasRealWorkoutData: boolean;
   hasRealLoadData: boolean;
+  hasRealPrData: boolean;
 };
-
-const dayMs = 86400000;
 
 const muscleTargets: Record<MuscleGroupName, { min: number; max: number }> = {
   Chest: { min: 10, max: 20 },
@@ -121,23 +132,27 @@ const muscleTargets: Record<MuscleGroupName, { min: number; max: number }> = {
 const targetOrder = Object.keys(muscleTargets) as MuscleGroupName[];
 
 function getDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return getLocalDateKey(date);
 }
 
 function weekStart(date = new Date()) {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = start.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  start.setUTCDate(start.getUTCDate() + diff);
-  return start;
+  return getStartOfLocalWeek(date);
 }
 
 function monthStart(date = new Date()) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  return getStartOfLocalMonth(date);
 }
 
 function isAfterOrSame(date: string, boundary: Date) {
-  return new Date(date).getTime() >= boundary.getTime();
+  return parseLocalDateKey(getLocalDateKeyFromMaybeDate(date)).getTime() >= boundary.getTime();
+}
+
+function logDateKey(log: ProgressWorkoutLog) {
+  return log.workoutDate ?? getLocalDateKeyFromMaybeDate(log.completedAt);
+}
+
+function isLogAfterOrSame(log: ProgressWorkoutLog, boundary: Date) {
+  return parseLocalDateKey(logDateKey(log)).getTime() >= boundary.getTime();
 }
 
 function parseNumber(value: unknown, fallback = 0) {
@@ -158,26 +173,25 @@ export function estimateOneRepMax(weight: number, reps: number) {
 }
 
 function completionDates(logs: ProgressWorkoutLog[]) {
-  return new Set(logs.map((log) => getDateKey(new Date(log.completedAt))));
+  return new Set(logs.map(logDateKey));
 }
 
 function calculateCurrentStreak(logs: ProgressWorkoutLog[]) {
   const dates = completionDates(logs);
   if (!dates.size) return 0;
 
-  const today = new Date();
-  let cursor = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  let cursor = getLocalToday();
   const todayKey = getDateKey(cursor);
 
   if (!dates.has(todayKey)) {
-    cursor = new Date(cursor.getTime() - dayMs);
+    cursor = addLocalDays(cursor, -1);
     if (!dates.has(getDateKey(cursor))) return 0;
   }
 
   let streak = 0;
   while (dates.has(getDateKey(cursor))) {
     streak += 1;
-    cursor = new Date(cursor.getTime() - dayMs);
+    cursor = addLocalDays(cursor, -1);
   }
 
   return streak;
@@ -191,8 +205,8 @@ function calculateBestStreak(logs: ProgressWorkoutLog[]) {
   let current = 1;
 
   for (let index = 1; index < sorted.length; index += 1) {
-    const previous = new Date(sorted[index - 1]).getTime();
-    const next = new Date(sorted[index]).getTime();
+    const previous = parseLocalDateKey(sorted[index - 1]).getTime();
+    const next = parseLocalDateKey(sorted[index]).getTime();
     if (next - previous === dayMs) {
       current += 1;
       best = Math.max(best, current);
@@ -210,7 +224,7 @@ function buildWeekDays(logs: ProgressWorkoutLog[]) {
   const todayKey = getDateKey(new Date());
 
   return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start.getTime() + index * dayMs);
+    const date = addLocalDays(start, index);
     const dateKey = getDateKey(date);
     return {
       label: new Intl.DateTimeFormat("en", { weekday: "short" }).format(date),
@@ -224,8 +238,8 @@ function buildWeekDays(logs: ProgressWorkoutLog[]) {
 function calculateConsistency(logs: ProgressWorkoutLog[], weeklyTarget: number): ConsistencyAnalytics {
   const startOfWeek = weekStart();
   const startOfMonth = monthStart();
-  const completedThisWeek = logs.filter((log) => isAfterOrSame(log.completedAt, startOfWeek)).length;
-  const completedThisMonth = logs.filter((log) => isAfterOrSame(log.completedAt, startOfMonth)).length;
+  const completedThisWeek = logs.filter((log) => isLogAfterOrSame(log, startOfWeek)).length;
+  const completedThisMonth = logs.filter((log) => isLogAfterOrSame(log, startOfMonth)).length;
   const target = Math.max(1, weeklyTarget);
 
   return {
@@ -351,7 +365,7 @@ function calculateRecentWorkouts(logs: ProgressWorkoutLog[], entries: ExercisePe
     .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())
     .slice(0, 6)
     .map((log) => {
-      const dateKey = log.workoutDate ?? getDateKey(new Date(log.completedAt));
+      const dateKey = logDateKey(log);
       const workoutEntries = entriesByWorkout[log.workoutId ?? log.id] ?? entriesByWorkout[dateKey] ?? [];
       const totalSets = workoutEntries.reduce((sum, entry) => sum + entry.sets, 0);
       const totalVolume = workoutEntries.reduce((sum, entry) => sum + entry.sets * entry.reps * parseNumber(entry.weight), 0);
@@ -400,6 +414,45 @@ function demoWorkoutLogs(): ProgressWorkoutLog[] {
   }));
 }
 
+function calculatePrTrend(entries: PRHistoryEntry[]) {
+  const realEntries = entries.filter((entry) => Number.isFinite(entry.oneRepMax) && entry.oneRepMax > 0);
+  const grouped = realEntries.reduce<Record<string, PRHistoryEntry[]>>((acc, entry) => {
+    acc[entry.lift] = [...(acc[entry.lift] ?? []), entry].sort((a, b) => {
+      const dateDelta = parseLocalDateKey(a.date).getTime() - parseLocalDateKey(b.date).getTime();
+      if (dateDelta !== 0) return dateDelta;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    return acc;
+  }, {});
+  const liftChanges = Object.entries(grouped)
+    .map(([lift, liftEntries]) => {
+      const first = liftEntries[0];
+      const latest = liftEntries[liftEntries.length - 1];
+      if (!first || !latest || liftEntries.length < 2 || first.oneRepMax <= 0) {
+        return { lift, percentChange: null as number | null, latest };
+      }
+
+      return {
+        lift,
+        percentChange: percentChange(latest.oneRepMax, first.oneRepMax),
+        latest
+      };
+    });
+  const changes = liftChanges
+    .map((item) => item.percentChange)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const latest = realEntries
+    .slice()
+    .sort((a, b) => parseLocalDateKey(b.date).getTime() - parseLocalDateKey(a.date).getTime())[0];
+
+  return {
+    entryCount: realEntries.length,
+    liftsTracked: Object.keys(grouped).length,
+    averagePercentChange: changes.length ? changes.reduce((sum, value) => sum + value, 0) / changes.length : null,
+    latest
+  };
+}
+
 function demoExerciseEntries(): ExercisePerformanceEntry[] {
   const now = Date.now();
   return [
@@ -440,15 +493,19 @@ export function buildProgressAnalytics({
   logs,
   exercises,
   weeklyTarget = 5,
-  recoveryScore = 72
+  recoveryScore = 72,
+  prEntries = []
 }: {
   logs: ProgressWorkoutLog[];
   exercises: ExercisePerformanceEntry[];
   weeklyTarget?: number;
   recoveryScore?: number;
+  prEntries?: PRHistoryEntry[];
 }): ProgressAnalytics {
   const hasRealWorkoutData = logs.length > 0 && !logs.every((log) => log.id.startsWith("demo-"));
   const hasRealLoadData = exercises.some((entry) => entry.weight && !entry.isDemo);
+  const prTrend = calculatePrTrend(prEntries);
+  const hasRealPrData = prTrend.entryCount > 0;
   const workingLogs = logs;
   const workingExercises = exercises;
   const consistency = calculateConsistency(workingLogs, weeklyTarget);
@@ -483,8 +540,24 @@ export function buildProgressAnalytics({
       : "Recovery is good enough to keep progressing.",
     hasRealLoadData
       ? `Strength trend is ${avgStrengthChange >= 0 ? "moving up" : "slipping"} across tracked lifts.`
-      : "Add load tracking later to replace demo strength estimates with real PR trends."
+      : hasRealPrData
+        ? `PR history is active across ${prTrend.liftsTracked} ${prTrend.liftsTracked === 1 ? "lift" : "lifts"}.`
+        : "Add PRs or set loads to start a real strength trend."
   ];
+  const strengthProgressText = hasRealLoadData
+    ? `${avgStrengthChange >= 0 ? "+" : ""}${avgStrengthChange.toFixed(1)}%`
+    : hasRealPrData && prTrend.averagePercentChange !== null
+      ? `${prTrend.averagePercentChange >= 0 ? "+" : ""}${prTrend.averagePercentChange.toFixed(1)}% PR`
+      : hasRealPrData
+        ? `${prTrend.liftsTracked} ${prTrend.liftsTracked === 1 ? "lift" : "lifts"}`
+        : "Add PR";
+  const strengthSubtext = hasRealLoadData
+    ? "Compared with last month"
+    : hasRealPrData && prTrend.averagePercentChange !== null
+      ? "Saved PR trend"
+      : hasRealPrData
+        ? "PR baseline logged"
+        : "Add PRs to start the trend";
 
   return {
     overview: {
@@ -492,10 +565,10 @@ export function buildProgressAnalytics({
       completionSubtext: `${consistency.completedThisWeek} of ${consistency.weeklyTarget} workouts completed this week`,
       currentStreak: `${consistency.currentStreak} ${consistency.currentStreak === 1 ? "day" : "days"}`,
       streakSubtext: consistency.currentStreak > 0 ? "Keep stacking wins" : "Start the next run today",
-      weeklyVolume: weeklyVolume > 0 ? `${formatLargeNumber(weeklyVolume)} lb` : "Add load",
-      weeklyVolumeSubtext: hasRealLoadData ? "Total lifted this week" : "Track weights to unlock volume",
-      strengthProgress: hasRealLoadData ? `${avgStrengthChange >= 0 ? "+" : ""}${avgStrengthChange.toFixed(1)}%` : "Add PR",
-      strengthSubtext: hasRealLoadData ? "Compared with last month" : "Add PRs to start the trend",
+      weeklyVolume: weeklyVolume > 0 ? `${formatLargeNumber(weeklyVolume)} lb` : "Load pending",
+      weeklyVolumeSubtext: hasRealLoadData ? "Total lifted this week" : "Add workout loads to unlock lifted volume tracking",
+      strengthProgress: strengthProgressText,
+      strengthSubtext,
       recoveryScore: `${recoveryScore}/100`,
       recoverySubtext: recoveryText
     },
@@ -506,6 +579,7 @@ export function buildProgressAnalytics({
     imbalanceInsights: imbalances,
     coachInsights,
     hasRealWorkoutData,
-    hasRealLoadData
+    hasRealLoadData,
+    hasRealPrData
   };
 }

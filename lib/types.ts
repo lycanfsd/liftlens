@@ -12,6 +12,10 @@ export type EquipmentAccess =
   | "full-gym"
   | "home-gym"
   | "dumbbells-only"
+  | "barbell-rack"
+  | "machines"
+  | "cables"
+  | "bands"
   | "bodyweight";
 
 export type BiggestStruggle =
@@ -28,7 +32,10 @@ export type WeakPoint =
   | "arms"
   | "back"
   | "legs"
+  | "quads"
+  | "hamstrings"
   | "glutes"
+  | "calves"
   | "core"
   | "conditioning";
 

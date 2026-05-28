@@ -5,10 +5,48 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { demoHistory } from "@/lib/demo-data";
+import { getLocalDateKeyFromMaybeDate } from "@/lib/dates";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { WorkoutHistoryItem } from "@/lib/types";
+import type { GeneratedWorkout, WorkoutHistoryItem } from "@/lib/types";
 import { formatDate, toTitleCase } from "@/lib/utils";
+
+type DailyHistoryRow = {
+  id: string;
+  workout_date: string;
+  workout_json: unknown;
+  input_snapshot: unknown;
+  title: string | null;
+  status: string | null;
+  updated_at: string | null;
+  created_at: string | null;
+};
+
+function isGeneratedWorkout(value: unknown): value is GeneratedWorkout {
+  if (typeof value !== "object" || value === null) return false;
+  const workout = value as Partial<GeneratedWorkout>;
+  return typeof workout.name === "string" && typeof workout.duration === "number" && Array.isArray(workout.exercises);
+}
+
+function dailyRowToHistory(row: DailyHistoryRow): WorkoutHistoryItem | null {
+  const workout = isGeneratedWorkout(row.workout_json) ? row.workout_json : null;
+  if (!workout) return null;
+
+  const input = typeof row.input_snapshot === "object" && row.input_snapshot !== null
+    ? (row.input_snapshot as { energy?: unknown; soreness?: unknown })
+    : {};
+
+  return {
+    id: row.id,
+    date: `${row.workout_date}T12:00:00`,
+    workoutName: row.title ?? workout.name,
+    duration: workout.duration,
+    focus: toTitleCase(workout.focus),
+    energy: typeof input.energy === "number" ? input.energy : 3,
+    soreness: typeof input.soreness === "number" ? input.soreness : 2,
+    completedExercises: workout.exercises.length
+  };
+}
 
 async function getHistory(): Promise<WorkoutHistoryItem[]> {
   if (!isSupabaseConfigured) return demoHistory;
@@ -20,18 +58,31 @@ async function getHistory(): Promise<WorkoutHistoryItem[]> {
 
   if (!user) return [];
 
-  const { data } = await supabase
-    .from("workouts")
-    .select("id, created_at, workout_name, duration, focus, energy, soreness, completed_exercises")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(30);
+  const [{ data: dailyData }, { data }] = await Promise.all([
+    supabase
+      .from("daily_workouts")
+      .select("id, workout_date, workout_json, input_snapshot, title, status, updated_at, created_at")
+      .eq("user_id", user.id)
+      .eq("status", "completed")
+      .order("workout_date", { ascending: false })
+      .limit(30),
+    supabase
+      .from("workouts")
+      .select("id, created_at, workout_date, workout_name, duration, focus, energy, soreness, completed_exercises")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(30)
+  ]);
+
+  const dailyItems = ((dailyData ?? []) as DailyHistoryRow[]).map(dailyRowToHistory).filter(Boolean) as WorkoutHistoryItem[];
+  const dailyDates = new Set(dailyItems.map((item) => getLocalDateKeyFromMaybeDate(item.date)));
 
   const rows =
     (data as
       | {
           id: string;
           created_at: string;
+          workout_date?: string | null;
           workout_name: string;
           duration: number;
           focus: string;
@@ -41,16 +92,25 @@ async function getHistory(): Promise<WorkoutHistoryItem[]> {
         }[]
       | null) ?? [];
 
-  return rows.map((row) => ({
-    id: row.id,
-    date: row.created_at,
-    workoutName: row.workout_name,
-    duration: row.duration,
-    focus: toTitleCase(row.focus),
-    energy: row.energy,
-    soreness: row.soreness,
-    completedExercises: row.completed_exercises
-  }));
+  const legacyItems = rows
+    .filter((row) => {
+      const dateKey = row.workout_date ?? getLocalDateKeyFromMaybeDate(row.created_at);
+      return !dailyDates.has(dateKey);
+    })
+    .map((row) => ({
+      id: row.id,
+      date: row.workout_date ? `${row.workout_date}T12:00:00` : row.created_at,
+      workoutName: row.workout_name,
+      duration: row.duration,
+      focus: toTitleCase(row.focus),
+      energy: row.energy,
+      soreness: row.soreness,
+      completedExercises: row.completed_exercises
+    }));
+
+  return [...dailyItems, ...legacyItems]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 30);
 }
 
 export default async function HistoryPage() {

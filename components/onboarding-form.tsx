@@ -7,6 +7,7 @@ import { saveOnboardingAction, skipOnboardingAction } from "@/app/app-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { APP_NAME } from "@/lib/brand";
+import { equipmentOptions as sharedEquipmentOptions, weakPoints as sharedWeakPoints } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 type OnboardingValues = {
@@ -72,29 +73,9 @@ const experienceLevels = [
   ["advanced", "Advanced"]
 ];
 
-const equipmentOptions = [
-  ["full-gym", "Full gym"],
-  ["dumbbells-only", "Dumbbells only"],
-  ["barbell-rack", "Barbell + rack"],
-  ["machines", "Machines"],
-  ["cables", "Cables"],
-  ["bands", "Resistance bands"],
-  ["bodyweight", "Bodyweight only"],
-  ["home-gym", "Home gym"]
-];
+const equipmentOptions = sharedEquipmentOptions.map((option) => [option.value, option.label] as const);
 
-const weakPointOptions = [
-  ["chest", "Chest"],
-  ["back", "Back"],
-  ["shoulders", "Shoulders"],
-  ["arms", "Arms"],
-  ["core", "Core"],
-  ["quads", "Quads"],
-  ["hamstrings", "Hamstrings"],
-  ["glutes", "Glutes"],
-  ["calves", "Calves"],
-  ["conditioning", "Conditioning"]
-];
+const weakPointOptions = sharedWeakPoints.map((option) => [option.value, option.label] as const);
 
 const recoveryPreferences: Array<[PreferenceKey, string]> = [
   ["adjust_for_soreness", "Adjust for soreness"],

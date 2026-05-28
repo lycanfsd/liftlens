@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { loadTodayDailyWorkoutAction } from "@/app/app-actions";
+import { getLocalDateKey } from "@/lib/dates";
 import type { DailyCheckIn, DailyWorkoutRecord, DailyWorkoutStatus, GeneratedWorkout } from "@/lib/types";
 
 type PersistenceSource = "backend" | "local" | "empty";
@@ -15,11 +16,7 @@ function debugPersistence(event: string, details?: Record<string, unknown>) {
   }
 }
 
-function getTodayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function storageKey(userId: string | null | undefined, workoutDate = getTodayKey()) {
+function storageKey(userId: string | null | undefined, workoutDate = getLocalDateKey()) {
   return `daily-workout-${workoutDate}-${userId ?? "unknown"}`;
 }
 
@@ -43,7 +40,7 @@ function normalizeRecord(record: DailyWorkoutRecord, fallbackUserId: string | nu
   return record.userId ? record : { ...record, userId: fallbackUserId ?? null };
 }
 
-function readLocalWorkout(userId: string | null | undefined, workoutDate = getTodayKey()) {
+function readLocalWorkout(userId: string | null | undefined, workoutDate = getLocalDateKey()) {
   if (typeof window === "undefined") return null;
 
   try {
@@ -78,7 +75,7 @@ function createLocalRecord({
   userId: string | null | undefined;
   previous?: DailyWorkoutRecord | null;
 }): DailyWorkoutRecord {
-  const workoutDate = getTodayKey();
+  const workoutDate = getLocalDateKey();
 
   return {
     id: previous?.id.startsWith("local-") ? previous.id : `local-${workout.id}`,
@@ -107,10 +104,12 @@ export function useDailyWorkoutPersistence({
   initialDailyWorkout?: DailyWorkoutRecord | null;
   currentUserId?: string | null;
 }) {
-  const [dailyWorkout, setDailyWorkoutState] = useState<DailyWorkoutRecord | null>(initialDailyWorkout ?? null);
-  const [source, setSource] = useState<PersistenceSource>(initialDailyWorkout ? "backend" : "empty");
-  const [resolvedUserId, setResolvedUserId] = useState<string | null>(currentUserId ?? initialDailyWorkout?.userId ?? null);
-  const [hasLoaded, setHasLoaded] = useState(Boolean(initialDailyWorkout));
+  const initialMatchesToday = initialDailyWorkout?.workoutDate === getLocalDateKey();
+  const initialRecord = initialMatchesToday ? initialDailyWorkout : null;
+  const [dailyWorkout, setDailyWorkoutState] = useState<DailyWorkoutRecord | null>(initialRecord ?? null);
+  const [source, setSource] = useState<PersistenceSource>(initialRecord ? "backend" : "empty");
+  const [resolvedUserId, setResolvedUserId] = useState<string | null>(currentUserId ?? initialRecord?.userId ?? null);
+  const [hasLoaded, setHasLoaded] = useState(Boolean(initialRecord));
 
   const setDailyWorkout = useCallback(
     (record: DailyWorkoutRecord, nextSource: PersistenceSource = "backend") => {
@@ -166,7 +165,7 @@ export function useDailyWorkoutPersistence({
     let cancelled = false;
 
     async function loadDailyWorkout() {
-      if (initialDailyWorkout) {
+      if (initialDailyWorkout?.workoutDate === getLocalDateKey()) {
         const normalized = normalizeRecord(initialDailyWorkout, currentUserId);
         setDailyWorkoutState(normalized);
         setResolvedUserId(normalized.userId);
@@ -183,11 +182,11 @@ export function useDailyWorkoutPersistence({
 
       debugPersistence("backend load attempt", {
         userId: currentUserId,
-        workoutDate: getTodayKey()
+        workoutDate: getLocalDateKey()
       });
 
       try {
-        const result = await loadTodayDailyWorkoutAction();
+        const result = await loadTodayDailyWorkoutAction(getLocalDateKey());
         if (cancelled) return;
 
         setResolvedUserId(result.userId);
@@ -249,7 +248,7 @@ export function useDailyWorkoutPersistence({
         setHasLoaded(true);
         debugPersistence("backend load failed with no fallback", {
           userId: currentUserId,
-          workoutDate: getTodayKey(),
+          workoutDate: getLocalDateKey(),
           error: error instanceof Error ? error.message : "Unknown load error"
         });
       }

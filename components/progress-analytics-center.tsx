@@ -17,7 +17,7 @@ import {
   Sparkles,
   Trophy
 } from "lucide-react";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 
 import {
   markChecklistItemAction,
@@ -32,6 +32,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { APP_NAME } from "@/lib/brand";
+import { getLocalDateKey, parseLocalDateKey } from "@/lib/dates";
 import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
 import { metricChange, physiqueMetricLabels } from "@/lib/progress/physique-metrics";
 import {
@@ -59,6 +60,7 @@ const legacyPhysiqueStorageKey = "flexfit-physique-measurements";
 const legacyRecoveryStorageKey = "flexfit-recovery-logs";
 const physiqueStorageKey = "ulvori-physique-measurements";
 const recoveryStorageKey = "ulvori-recovery-logs";
+const SHOW_PROGRESS_PHOTOS = false;
 const polishedCardHover = "transition duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:bg-white/[0.055]";
 const insetPanel = "rounded-2xl border border-white/10 bg-white/[0.035]";
 
@@ -81,10 +83,6 @@ type PRFormState = {
   oneRepMax: string;
   notes: string;
 };
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function createId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -282,7 +280,7 @@ function OverviewCards({ analytics, recoveryScore }: { analytics: ProgressAnalyt
         accent="blue"
       />
       <StatCard
-        label="Weekly volume"
+        label="Lifted volume"
         value={analytics.overview.weeklyVolume}
         detail={analytics.overview.weeklyVolumeSubtext}
         icon={Dumbbell}
@@ -457,6 +455,55 @@ function getStrengthPRInsight(lift: string, entries: PRHistoryEntry[], unit: "lb
   }
 
   return `Your ${lift} is below the last entry. That can reflect fatigue, recovery, or a conservative estimate. Keep the next update honest.`;
+}
+
+function prOverviewFromEntries(entries: PRHistoryEntry[]) {
+  const grouped = entries.reduce<Record<string, PRHistoryEntry[]>>((acc, entry) => {
+    acc[entry.lift] = [...(acc[entry.lift] ?? []), entry].sort((a, b) => {
+      const dateDelta = parseLocalDateKey(a.date).getTime() - parseLocalDateKey(b.date).getTime();
+      if (dateDelta !== 0) return dateDelta;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+    return acc;
+  }, {});
+  const changes = Object.values(grouped)
+    .map((liftEntries) => {
+      const first = liftEntries[0];
+      const latest = liftEntries[liftEntries.length - 1];
+      if (!first || !latest || liftEntries.length < 2 || first.oneRepMax <= 0) return null;
+      return ((latest.oneRepMax - first.oneRepMax) / first.oneRepMax) * 100;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const liftsTracked = Object.keys(grouped).length;
+  const averageChange = changes.length ? changes.reduce((sum, value) => sum + value, 0) / changes.length : null;
+
+  return {
+    liftsTracked,
+    strengthProgress:
+      averageChange !== null
+        ? `${averageChange >= 0 ? "+" : ""}${averageChange.toFixed(1)}% PR`
+        : `${liftsTracked} ${liftsTracked === 1 ? "lift" : "lifts"}`,
+    strengthSubtext: averageChange !== null ? "Saved PR trend" : "PR baseline logged"
+  };
+}
+
+function withClientPrOverview(analytics: ProgressAnalytics, entries: PRHistoryEntry[]): ProgressAnalytics {
+  if (entries.length === 0 || analytics.hasRealLoadData) return analytics;
+
+  const prOverview = prOverviewFromEntries(entries);
+  return {
+    ...analytics,
+    hasRealPrData: true,
+    overview: {
+      ...analytics.overview,
+      strengthProgress: prOverview.strengthProgress,
+      strengthSubtext: prOverview.strengthSubtext
+    },
+    coachInsights: [
+      ...analytics.coachInsights.slice(0, 3),
+      `PR history is active across ${prOverview.liftsTracked} ${prOverview.liftsTracked === 1 ? "lift" : "lifts"}.`
+    ]
+  };
 }
 
 function PRTrendIcon({ change }: { change: number | null }) {
@@ -695,22 +742,25 @@ function PRTrendChart({ entries, lift, unit }: { entries: PRHistoryEntry[]; lift
 function StrengthProgressAnalytics({
   analytics,
   userId,
-  initialEntries = []
+  initialEntries = [],
+  onEntriesChange
 }: {
   analytics: ProgressAnalytics;
   userId?: string | null;
   initialEntries?: PRHistoryEntry[];
+  onEntriesChange?: (entries: PRHistoryEntry[]) => void;
 }) {
   const unit = "lb";
   const storageKey = useMemo(() => getPRStorageKey(userId), [userId]);
-  const [entries, setEntries] = useState<PRHistoryEntry[]>([]);
+  const accountSyncEnabled = Boolean(userId);
+  const [entries, setEntries] = useState<PRHistoryEntry[]>(() => (accountSyncEnabled ? initialEntries : []));
   const [selectedLift, setSelectedLift] = useState<PRLift>(mainPRLifts[0]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isSavingPr, startPrTransition] = useTransition();
   const [form, setForm] = useState<PRFormState>({
     lift: mainPRLifts[0],
-    date: todayKey(),
+    date: getLocalDateKey(),
     oneRepMax: "",
     notes: ""
   });
@@ -721,11 +771,15 @@ function StrengthProgressAnalytics({
   const selectedPercent = getPRPercentChangeForLift(entries, selectedLift, unit);
   const selectedNewPr = isLatestAllTimePR(latest, allTime);
   const hasAnyPrs = entries.length > 0;
-  const accountSyncEnabled = Boolean(userId);
 
   useEffect(() => {
-    setEntries(accountSyncEnabled ? initialEntries : getPRHistory(storageKey));
+    const loaded = accountSyncEnabled ? initialEntries : getPRHistory(storageKey);
+    setEntries(loaded);
   }, [accountSyncEnabled, initialEntries, storageKey]);
+
+  useEffect(() => {
+    onEntriesChange?.(entries);
+  }, [entries, onEntriesChange]);
 
   function selectLift(lift: PRLift) {
     setSelectedLift(lift);
@@ -788,7 +842,10 @@ function StrengthProgressAnalytics({
         return;
       }
 
-      setEntries((current) => mergePRHistoryEntry(current, result.entry as PRHistoryEntry));
+      setEntries((current) => {
+        const next = mergePRHistoryEntry(current, result.entry as PRHistoryEntry);
+        return next;
+      });
       setSelectedLift(result.entry.lift as PRLift);
       setError("");
       setMessage(result.message);
@@ -807,7 +864,7 @@ function StrengthProgressAnalytics({
           <Badge className="border-primary/20 bg-primary/10 text-primary">
             {accountSyncEnabled ? "Account-synced PRs" : "Local PR log"}
           </Badge>
-          <SourceBadge real={analytics.hasRealLoadData} />
+          <SourceBadge real={analytics.hasRealPrData} />
         </div>
       }
     >
@@ -1078,7 +1135,7 @@ function PhysiqueTracker({
   const [isSavingPhysique, startPhysiqueTransition] = useTransition();
   const accountSyncEnabled = Boolean(userId);
   const [form, setForm] = useState<PhysiqueFormState>({
-    date: todayKey(),
+    date: getLocalDateKey(),
     weight: "",
     waist: "",
     chest: "",
@@ -1102,7 +1159,7 @@ function PhysiqueTracker({
   function saveEntry() {
     const entry: PhysiqueMeasurementEntry = {
       id: createId("physique"),
-      date: form.date || todayKey(),
+      date: form.date || getLocalDateKey(),
       weight: safeNumber(form.weight),
       waist: safeNumber(form.waist),
       chest: safeNumber(form.chest),
@@ -1274,7 +1331,7 @@ function RecoveryReadiness({
   const [isSavingRecovery, startRecoveryTransition] = useTransition();
   const accountSyncEnabled = Boolean(userId);
   const [form, setForm] = useState<RecoveryFormState>({
-    date: todayKey(),
+    date: getLocalDateKey(),
     sleepHours: "7",
     energy: "7",
     soreness: "3",
@@ -1303,7 +1360,7 @@ function RecoveryReadiness({
   function saveEntry() {
     const entry: RecoveryLogEntry = {
       id: createId("recovery"),
-      date: form.date || todayKey(),
+      date: form.date || getLocalDateKey(),
       sleepHours: Number(form.sleepHours) || 0,
       energy: Number(form.energy) || 0,
       soreness: Number(form.soreness) || 0,
@@ -1485,6 +1542,11 @@ export function ProgressAnalyticsCenter({
   const initialRecoveryScore = latestRecoveryScore ?? (Number.parseInt(analytics.overview.recoveryScore, 10) || 72);
   const [recoveryScore, setRecoveryScore] = useState(initialRecoveryScore);
   const [physiqueEntries, setPhysiqueEntries] = useState<PhysiqueMeasurementEntry[]>([]);
+  const [prEntries, setPrEntries] = useState<PRHistoryEntry[]>(initialPrEntries);
+  const handlePrEntriesChange = useCallback((nextEntries: PRHistoryEntry[]) => {
+    setPrEntries(nextEntries);
+  }, []);
+  const analyticsForDisplay = useMemo(() => withClientPrOverview(analytics, prEntries), [analytics, prEntries]);
 
   useEffect(() => {
     setPhysiqueEntries(userId ? initialPhysiqueEntries : loadLocalArray<PhysiqueMeasurementEntry>(physiqueStorageKey, legacyPhysiqueStorageKey));
@@ -1497,34 +1559,34 @@ export function ProgressAnalyticsCenter({
 
   return (
     <div className="space-y-10 sm:space-y-12">
-      <ProgressTrajectoryCard analytics={analytics} recoveryScore={recoveryScore} profileGoal={profileGoal} weakPoints={weakPoints} />
-      {!analytics.hasRealWorkoutData || !analytics.hasRealLoadData ? (
+      <ProgressTrajectoryCard analytics={analyticsForDisplay} recoveryScore={recoveryScore} profileGoal={profileGoal} weakPoints={weakPoints} />
+      {!analyticsForDisplay.hasRealWorkoutData || (!analyticsForDisplay.hasRealLoadData && !analyticsForDisplay.hasRealPrData) ? (
         <Card className="border-white/10 bg-white/[0.035]">
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-white">
-                {analytics.hasRealWorkoutData ? "Load tracking is still pending." : "Complete your first workout to unlock analytics."}
+                {analyticsForDisplay.hasRealWorkoutData ? "Strength tracking is still pending." : "Complete your first workout to unlock analytics."}
               </p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                {analytics.hasRealWorkoutData
-                  ? "Consistency and muscle balance now use real completed workouts. Add set weights or PRs to unlock strength and volume trends."
+                {analyticsForDisplay.hasRealWorkoutData
+                  ? "Consistency and muscle balance now use real completed workouts. Add PRs or workout loads to unlock strength trends."
                   : "Progress will stay honest until you have completed workout history. No fake completion data is shown."}
               </p>
             </div>
             <Badge className="w-fit border-primary/20 bg-primary/10 text-primary">
-              {analytics.hasRealWorkoutData ? "Real workout data" : "Waiting for first session"}
+              {analyticsForDisplay.hasRealWorkoutData ? "Real workout data" : "Waiting for first session"}
             </Badge>
           </CardContent>
         </Card>
       ) : null}
-      <OverviewCards analytics={analytics} recoveryScore={recoveryScore} />
-      <ConsistencyAnalytics analytics={analytics} />
-      <StrengthProgressAnalytics analytics={analytics} userId={userId} initialEntries={initialPrEntries} />
-      <MuscleGroupVolumeAnalytics analytics={analytics} />
+      <OverviewCards analytics={analyticsForDisplay} recoveryScore={recoveryScore} />
+      <ConsistencyAnalytics analytics={analyticsForDisplay} />
+      <StrengthProgressAnalytics analytics={analyticsForDisplay} userId={userId} initialEntries={initialPrEntries} onEntriesChange={handlePrEntriesChange} />
+      <MuscleGroupVolumeAnalytics analytics={analyticsForDisplay} />
       <PhysiqueTracker onEntriesChange={setPhysiqueEntries} initialEntries={initialPhysiqueEntries} userId={userId} />
-      <ProgressPhotos />
+      {SHOW_PROGRESS_PHOTOS ? <ProgressPhotos /> : null}
       <RecoveryReadiness onScoreChange={setRecoveryScore} initialEntries={initialRecoveryEntries} userId={userId} />
-      <AICoachInsights analytics={analytics} physiqueEntries={physiqueEntries} recoveryScore={recoveryScore} />
+      <AICoachInsights analytics={analyticsForDisplay} physiqueEntries={physiqueEntries} recoveryScore={recoveryScore} />
     </div>
   );
 }

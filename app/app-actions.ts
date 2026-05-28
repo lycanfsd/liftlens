@@ -5,12 +5,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { APP_NAME } from "@/lib/brand";
+import { getLocalDateKey } from "@/lib/dates";
 import type { PhysiqueMeasurementEntry } from "@/lib/progress/physique-metrics";
 import { mainPRLifts, type PRHistoryEntry } from "@/lib/progress/pr-history";
 import { calculateRecoveryScore, type RecoveryLogEntry } from "@/lib/progress/recovery-metrics";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { DailyCheckIn, DailyWorkoutRecord, DailyWorkoutStatus, GeneratedWorkout } from "@/lib/types";
+import type { DailyCheckIn, DailyWorkoutRecord, DailyWorkoutStatus, EquipmentAccess, GeneratedWorkout } from "@/lib/types";
 import {
   getCurrentUserTodayDailyWorkoutResult,
   saveTodayDailyWorkoutForUser,
@@ -39,6 +40,7 @@ export type WorkoutExplanationResult = {
 export type GenerateAdaptiveWorkoutOptions = {
   persistDaily?: boolean;
   overwriteExisting?: boolean;
+  workoutDate?: string;
 };
 
 export type GenerateAdaptiveWorkoutResult = {
@@ -74,11 +76,15 @@ const onboardingSchema = z.object({
   emphasize_progress_analytics: z.coerce.boolean().default(true)
 });
 
-function primaryEquipmentAccess(equipment: string[]) {
-  if (equipment.includes("bodyweight")) return "bodyweight";
-  if (equipment.includes("dumbbells-only")) return "dumbbells-only";
+function primaryEquipmentAccess(equipment: string[]): EquipmentAccess {
+  if (equipment.includes("full-gym")) return "full-gym";
   if (equipment.includes("home-gym")) return "home-gym";
-  return "full-gym";
+  if (equipment.includes("dumbbells-only")) return "dumbbells-only";
+  if (equipment.includes("barbell-rack")) return "barbell-rack";
+  if (equipment.includes("machines")) return "machines";
+  if (equipment.includes("cables")) return "cables";
+  if (equipment.includes("bands")) return "bands";
+  return "bodyweight";
 }
 
 function preferredLengthToMinutes(value: string) {
@@ -243,7 +249,7 @@ const profileSchema = z.object({
     (value) => (value === "" || value === null ? undefined : value),
     z.coerce.number().int().min(10, "Workout length must be at least 10 minutes.").max(120, "Workout length must be 120 minutes or less.").optional()
   ),
-  equipment_access: z.enum(["full-gym", "home-gym", "dumbbells-only", "bodyweight"]).optional(),
+  equipment_access: z.enum(["full-gym", "home-gym", "dumbbells-only", "barbell-rack", "machines", "cables", "bands", "bodyweight"]).optional(),
   weak_points: z.array(z.string()).default([]),
   biggest_struggle: z
     .enum(["consistency", "diet", "motivation", "time", "gym-anxiety", "not-knowing-what-to-do"])
@@ -403,7 +409,8 @@ export async function generateAdaptiveWorkoutAction(
     userId: user.id,
     input,
     workout: enhancedWorkout,
-    overwriteExisting: options.overwriteExisting ?? false
+    overwriteExisting: options.overwriteExisting ?? false,
+    workoutDate: options.workoutDate ?? getLocalDateKey()
   });
 
   if (dailyResult.blockedByExisting && dailyResult.record) {
@@ -462,14 +469,14 @@ export async function generateAdaptiveWorkoutAction(
   };
 }
 
-export async function loadTodayDailyWorkoutAction(): Promise<{
+export async function loadTodayDailyWorkoutAction(workoutDate = getLocalDateKey()): Promise<{
   dailyWorkout: DailyWorkoutRecord | null;
   debugMessage: string;
   error?: string;
   userId: string | null;
   workoutDate: string;
 }> {
-  const result = await getCurrentUserTodayDailyWorkoutResult();
+  const result = await getCurrentUserTodayDailyWorkoutResult(workoutDate);
   return {
     dailyWorkout: result.record,
     debugMessage: result.debugMessage,
@@ -483,7 +490,8 @@ const dailyWorkoutStatusSchema = z.enum(["planned", "started", "completed", "ski
 
 export async function updateDailyWorkoutStatusAction(
   status: DailyWorkoutStatus,
-  workoutId?: string | null
+  workoutId?: string | null,
+  workoutDate = getLocalDateKey()
 ): Promise<{ ok: boolean; message: string; dailyWorkout?: DailyWorkoutRecord | null; debugMessage?: string }> {
   const parsed = dailyWorkoutStatusSchema.safeParse(status);
 
@@ -508,7 +516,8 @@ export async function updateDailyWorkoutStatusAction(
     supabase,
     userId: user.id,
     status: parsed.data,
-    workoutId
+    workoutId,
+    workoutDate
   });
 
   if (result.error) {
@@ -1285,7 +1294,7 @@ export async function saveWorkoutAction(
 
   const enhancedWorkoutInsert = {
     ...legacyWorkoutInsert,
-    workout_date: new Date().toISOString().slice(0, 10),
+    workout_date: getLocalDateKey(),
     readiness_score: workoutForSave.readinessScore ?? null,
     training_dose: workoutForSave.trainingDose ?? workoutForSave.intensity,
     input_snapshot: jsonSafe(inputForSave),

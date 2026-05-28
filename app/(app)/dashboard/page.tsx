@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { APP_NAME } from "@/lib/brand";
+import { getLocalDateKey, getLocalDateKeyDaysAgo, getStartOfLocalWeek } from "@/lib/dates";
 import { calculateMomentumSystem, type MomentumLog, type MomentumSystem } from "@/lib/momentum";
 import { normalizePlanType, type PlanType } from "@/lib/plans";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -86,14 +87,6 @@ function demoMomentumLogs(): MomentumLog[] {
   }));
 }
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysAgoKey(daysAgo: number) {
-  return new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 10);
-}
-
 function formatProfileLabel(value: unknown, fallback = "Recomposition") {
   if (typeof value !== "string" || !value.trim()) return fallback;
   return value
@@ -124,7 +117,7 @@ function dailyWorkoutToMomentumLog(row: DashboardDailyWorkoutRow): MomentumLog {
       : {};
 
   return {
-    completed_at: row.updated_at ?? row.created_at ?? `${row.workout_date}T12:00:00.000Z`,
+    completed_at: `${row.workout_date}T12:00:00`,
     duration: workout?.duration ?? null,
     focus: row.title ?? workout?.name ?? workout?.focus ?? "Completed workout",
     energy: typeof input.energy === "number" ? input.energy : null,
@@ -320,14 +313,14 @@ async function getDashboardData(): Promise<DashboardData> {
       .select("id, workout_date, workout_json, input_snapshot, title, status, updated_at, created_at")
       .eq("user_id", user.id)
       .eq("status", "completed")
-      .gte("workout_date", daysAgoKey(28))
+      .gte("workout_date", getLocalDateKeyDaysAgo(28))
       .order("workout_date", { ascending: false })
       .limit(50),
     supabase
       .from("daily_workouts")
       .select("id, workout_date, workout_json, input_snapshot, title, status, updated_at, created_at")
       .eq("user_id", user.id)
-      .eq("workout_date", todayKey())
+      .eq("workout_date", getLocalDateKey())
       .maybeSingle()
   ]);
 
@@ -367,9 +360,9 @@ async function getDashboardData(): Promise<DashboardData> {
   const weeklyTarget = typeof profileRow.weekly_training_days === "number" ? profileRow.weekly_training_days : 4;
   const preferredLength = typeof profileRow.preferred_workout_length === "number" ? profileRow.preferred_workout_length : 35;
   const momentum = calculateMomentumSystem(rows, { weeklyTarget, preferredWorkoutLength: preferredLength });
-  const now = Date.now();
-  const weekRows = rows.filter((row) => now - new Date(row.completed_at).getTime() <= 7 * 86400000);
-  const consistency = Math.min(100, Math.round((weekRows.length / 4) * 100));
+  const startOfWeek = getStartOfLocalWeek();
+  const weekRows = rows.filter((row) => new Date(row.completed_at).getTime() >= startOfWeek.getTime());
+  const consistency = Math.min(100, Math.round((weekRows.length / weeklyTarget) * 100));
   const focusCounts = rows.reduce<Record<string, number>>((acc, row) => {
     const focus = row.focus ?? "Full body";
     acc[focus] = (acc[focus] ?? 0) + 1;

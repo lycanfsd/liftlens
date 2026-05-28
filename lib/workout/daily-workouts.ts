@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getLocalDateKey } from "@/lib/dates";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyCheckIn, DailyWorkoutRecord, DailyWorkoutStatus, GeneratedWorkout } from "@/lib/types";
@@ -65,7 +66,7 @@ function devLog(event: string, details: Record<string, unknown>) {
 }
 
 export function getWorkoutDateKey(date = new Date()) {
-  return date.toISOString().slice(0, 10);
+  return getLocalDateKey(date);
 }
 
 function jsonSafe<T>(value: T): T {
@@ -136,9 +137,7 @@ export async function getCurrentUserTodayDailyWorkout(): Promise<DailyWorkoutRec
   return result.record;
 }
 
-export async function getCurrentUserTodayDailyWorkoutResult(): Promise<DailyWorkoutLoadResult> {
-  const workoutDate = getWorkoutDateKey();
-
+export async function getCurrentUserTodayDailyWorkoutResult(workoutDate = getWorkoutDateKey()): Promise<DailyWorkoutLoadResult> {
   if (!isSupabaseConfigured) {
     const debugMessage = "Load failed: Supabase environment variables are not configured.";
     devLog("load error", {
@@ -278,15 +277,16 @@ export async function saveTodayDailyWorkoutForUser({
   userId,
   input,
   workout,
-  overwriteExisting = false
+  overwriteExisting = false,
+  workoutDate = getWorkoutDateKey()
 }: {
   supabase: SupabaseServerClient;
   userId: string;
   input: DailyCheckIn;
   workout: GeneratedWorkout;
   overwriteExisting?: boolean;
+  workoutDate?: string;
 }): Promise<DailyWorkoutSaveResult> {
-  const workoutDate = getWorkoutDateKey();
   devLog("save attempt", {
     table: DAILY_WORKOUTS_TABLE,
     operation: overwriteExisting ? "upsert/update today" : "insert today",
@@ -401,18 +401,20 @@ export async function updateTodayDailyWorkoutStatusForUser({
   supabase,
   userId,
   status,
-  workoutId
+  workoutId,
+  workoutDate = getWorkoutDateKey()
 }: {
   supabase: SupabaseServerClient;
   userId: string;
   status: DailyWorkoutStatus;
   workoutId?: string | null;
+  workoutDate?: string;
 }): Promise<DailyWorkoutSaveResult> {
   devLog("save attempt", {
     table: DAILY_WORKOUTS_TABLE,
     operation: "update status",
     user_id: userId,
-    workout_date: getWorkoutDateKey(),
+    workout_date: workoutDate,
     status,
     workout_id: workoutId ?? null,
     expectedColumns
@@ -426,7 +428,7 @@ export async function updateTodayDailyWorkoutStatusForUser({
     })
     .eq("user_id", userId);
 
-  const scopedQuery = workoutId ? query.eq("id", workoutId) : query.eq("workout_date", getWorkoutDateKey());
+  const scopedQuery = workoutId ? query.eq("id", workoutId) : query.eq("workout_date", workoutDate);
   const { data, error } = await scopedQuery.select(dailyWorkoutSelect).single();
 
   if (error) {
@@ -435,7 +437,7 @@ export async function updateTodayDailyWorkoutStatusForUser({
       table: DAILY_WORKOUTS_TABLE,
       operation: "update status",
       user_id: userId,
-      workout_date: getWorkoutDateKey(),
+      workout_date: workoutDate,
       message: error.message,
       code: error.code,
       expectedColumns: ["id", "user_id", "workout_date", "status", "updated_at"]
@@ -447,7 +449,7 @@ export async function updateTodayDailyWorkoutStatusForUser({
       error: error.message,
       debugMessage,
       userId,
-      workoutDate: getWorkoutDateKey()
+      workoutDate
     };
   }
 
@@ -456,7 +458,7 @@ export async function updateTodayDailyWorkoutStatusForUser({
     table: DAILY_WORKOUTS_TABLE,
     operation: "update status",
     user_id: userId,
-    workout_date: getWorkoutDateKey(),
+    workout_date: workoutDate,
     returnedRowId: record?.id ?? null,
     expectedColumns
   });
@@ -466,6 +468,6 @@ export async function updateTodayDailyWorkoutStatusForUser({
     blockedByExisting: false,
     debugMessage: record ? `Workout saved: ${record.id}` : "Save failed: status update returned no valid row.",
     userId,
-    workoutDate: getWorkoutDateKey()
+    workoutDate
   };
 }
