@@ -559,6 +559,31 @@ export function WorkoutCard({
         </section>
 
         <section className="border-t border-white/10 p-5 sm:p-6">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="grid gap-4 lg:grid-cols-[1fr_260px] lg:items-center">
+              <div>
+                <h3 className="flex items-center gap-2 font-semibold text-white">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  Completion standard
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">Clean reps. One note. Stop while quality is high.</p>
+                {message ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p> : null}
+              </div>
+              {onComplete || onSave ? (
+                <Button
+                  data-tour="complete-workout"
+                  onClick={onComplete ?? onSave}
+                  disabled={saving || status === "completed"}
+                  className="w-full"
+                >
+                  {saving ? "Saving..." : completeLabel}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        <section className="border-t border-white/10 p-5 sm:p-6">
           <div className="grid gap-3">
             <div>
               <h3 className="text-lg font-semibold text-white">Advanced details</h3>
@@ -707,29 +732,6 @@ export function WorkoutCard({
                 ) : null}
               </div>
             </DetailSection>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <div className="grid gap-4 lg:grid-cols-[1fr_260px] lg:items-center">
-              <div>
-                <h3 className="flex items-center gap-2 font-semibold text-white">
-                  <CheckCircle2 className="h-4 w-4 text-primary" />
-                  Completion standard
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">Clean reps. One note. Stop while quality is high.</p>
-                {message ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{message}</p> : null}
-              </div>
-              {onComplete || onSave ? (
-                <Button
-                  data-tour="complete-workout"
-                  onClick={onComplete ?? onSave}
-                  disabled={saving || status === "completed"}
-                  className="w-full"
-                >
-                  {saving ? "Saving..." : completeLabel}
-                </Button>
-              ) : null}
-            </div>
           </div>
         </section>
       </CardContent>
